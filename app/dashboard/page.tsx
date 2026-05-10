@@ -66,12 +66,12 @@ export default function Dashboard() {
     })
   }
 
-  const total     = tasks.length
-  const inProg    = tasks.filter((t: any) => t.status === 'In Progress').length
-  const completed = tasks.filter((t: any) => t.status === 'Completed').length
-  const overdue   = tasks.filter((t: any) => t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today)
   const myTasks   = tasks.filter(isMyTask)
-  const myOverdue = myTasks.filter((t: any) => t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today)
+  const total     = myTasks.length
+  const inProg    = myTasks.filter((t: any) => t.status === 'In Progress').length
+  const completed = myTasks.filter((t: any) => t.status === 'Completed').length
+  const overdue   = myTasks.filter((t: any) => t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today)
+  const myOverdue = overdue
   const myDueSoon = myTasks.filter((t: any) => {
     if (t.status === 'Completed' || !t.end_date) return false
     const e = new Date(t.end_date); e.setHours(0, 0, 0, 0)
@@ -82,8 +82,8 @@ export default function Dashboard() {
 
   // Stat card accent colors
   const STATS = [
-    { label: 'Total Tasks',   value: total,          color: 'var(--blue)',   accent: '#1a73e8', icon: '📋' },
-    { label: 'Overdue',       value: overdue.length,  color: 'var(--red)',    accent: '#c5221f', icon: '⚠️', onClick: overdue.length > 0 ? () => router.push('/all-tasks') : undefined },
+    { label: 'My Tasks',      value: total,          color: 'var(--blue)',   accent: '#1a73e8', icon: '📋' },
+    { label: 'My Overdue',    value: overdue.length,  color: 'var(--red)',    accent: '#c5221f', icon: '⚠️', onClick: overdue.length > 0 ? () => router.push('/all-tasks') : undefined },
     { label: 'In Progress',   value: inProg,          color: 'var(--amber)',  accent: '#b45309', icon: '⏳' },
     { label: 'Completed',     value: completed,       color: 'var(--accent)', accent: '#2e7d32', icon: '✅' },
   ]
@@ -229,7 +229,7 @@ export default function Dashboard() {
       </div>
       <div className="kanban-grid">
         {STATUSES.map(status => {
-          const group = tasks.filter((t: any) => t.status === status)
+          const group = myTasks.filter((t: any) => t.status === status)
           return (
             <div key={status} className="kanban-col">
               <div className="k-header">
