@@ -73,22 +73,23 @@ export default function AdminUsers() {
     if (!inviteEmail.trim() || !inviteName.trim()) return
     setInviting(true)
     try {
-      const newId = crypto.randomUUID()
-      const { error } = await supabase.from('Users').insert({
-        id: newId, full_name: inviteName.trim(),
-        email: inviteEmail.trim(), role: inviteRole,
+      // Use server-side API route with service role key to send real invite email
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          full_name: inviteName.trim(),
+          role: inviteRole,
+        }),
       })
-      if (error) throw error
-
-      // Send password setup email
-      await supabase.auth.resetPasswordForEmail(inviteEmail.trim(), {
-        redirectTo: `${window.location.origin}/auth`,
-      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Invite failed')
 
       // Notify managers that new user joined
       await notifyUserJoined(inviteName.trim(), inviteEmail.trim())
 
-      showMsg(`✅ ${inviteName} invited successfully!`)
+      showMsg(`✅ Invite sent to ${inviteEmail}! They will receive an email to set their password.`)
       const { data } = await supabase.from('Users').select('*').order('full_name')
       setUsers(data || [])
       setInviteName(''); setInviteEmail(''); setShowModal(false)
