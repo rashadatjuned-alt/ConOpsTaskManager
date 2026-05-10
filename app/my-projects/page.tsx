@@ -7,14 +7,14 @@ import { useRouter } from 'next/navigation'
 import { getAssignees } from '@/lib/projectUtils'
 
 const STATUS_DOT: Record<string, string> = {
-  'Not Started': '#6b7280', 'In Progress': '#3b82f6',
+  'Not Started': 'var(--txt3)', 'In Progress': '#3b82f6',
   'On-Hold': '#f59e0b', 'Completed': '#22c55e',
 }
 const STATUS_PILL: Record<string, { bg: string; color: string }> = {
-  'Not Started': { bg: '#1f2937', color: '#9ca3af' },
-  'In Progress': { bg: '#1e3a5f', color: '#60a5fa' },
-  'On-Hold':     { bg: '#3d2400', color: '#f59e0b' },
-  'Completed':   { bg: '#052e16', color: '#4ade80' },
+  'Not Started': { bg: 'var(--pill-ns-bg)', color: 'var(--pill-ns-txt)' },
+  'In Progress': { bg: 'var(--blue2)', color: 'var(--blue)' },
+  'On-Hold':     { bg: 'var(--amber2)', color: 'var(--amber)' },
+  'Completed':   { bg: 'var(--accent2)', color: 'var(--accent)' },
 }
 
 function Pill({ status }: { status: string }) {
@@ -73,7 +73,7 @@ export default function MyProjects() {
 
   return (
     <AppShell title="My Projects">
-      <div style={{ fontSize: 11, color: '#4b5563', marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 12 }}>
         {myProjects.length} project{myProjects.length !== 1 ? 's' : ''}
       </div>
 
@@ -102,7 +102,7 @@ export default function MyProjects() {
               )}
               <div style={S.projMeta}>{pt.length} task{pt.length !== 1 ? 's' : ''}</div>
               <div style={S.projPct}>{pct}%</div>
-              <div style={{ width: 60, height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: 60, height: 3, background: 'var(--brd2)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: proj.color_code || '#3b82f6', borderRadius: 2, transition: 'width 0.4s' }} />
               </div>
             </div>
@@ -112,13 +112,13 @@ export default function MyProjects() {
               <div style={S.taskList}>
                 <div style={S.divider} />
                 {pt.length === 0 ? (
-                  <div style={{ fontSize: 12, color: '#4b5563', padding: '8px 0' }}>No tasks yet.</div>
+                  <div style={{ fontSize: 12, color: 'var(--txt3)', padding: '8px 0' }}>No tasks yet.</div>
                 ) : pt.map((t: any) => {
                   const subs = subtasks.filter((s: any) => String(s.parent_task_id) === String(t.id))
                   const doneS = subs.filter((s: any) => s.status === 'Completed').length
                   return (
                     <div key={t.id} style={S.taskRow} onClick={() => router.push(`/tasks/${t.id}`)}>
-                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[t.status] || '#6b7280', flexShrink: 0 }} />
+                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[t.status] || 'var(--txt3)', flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={S.taskName}>{t.topic}</div>
                         <div style={S.taskMeta}>
@@ -144,18 +144,18 @@ export default function MyProjects() {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  loading:    { padding: 40, color: '#6b7280', textAlign: 'center' },
-  empty:      { textAlign: 'center', padding: '4rem 0', color: '#6b7280', fontSize: 13 },
-  projCard:   { background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
+  loading:    { padding: 40, color: 'var(--txt3)', textAlign: 'center' },
+  empty:      { textAlign: 'center', padding: '4rem 0', color: 'var(--txt3)', fontSize: 13 },
+  projCard:   { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
   projHeader: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', cursor: 'pointer', transition: 'background 0.14s' },
-  projName:   { fontSize: 13, fontWeight: 600, color: '#f3f4f6', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  projDesc:   { fontSize: 11, color: '#4b5563', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  projMeta:   { fontSize: 11, color: '#4b5563', whiteSpace: 'nowrap' },
-  projPct:    { fontSize: 11, fontWeight: 600, color: '#6b7280', fontFamily: 'monospace', whiteSpace: 'nowrap' },
+  projName:   { fontSize: 13, fontWeight: 600, color: 'var(--txt)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  projDesc:   { fontSize: 11, color: 'var(--txt3)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  projMeta:   { fontSize: 11, color: 'var(--txt3)', whiteSpace: 'nowrap' },
+  projPct:    { fontSize: 11, fontWeight: 600, color: 'var(--txt3)', fontFamily: 'monospace', whiteSpace: 'nowrap' },
   taskList:   { padding: '0 16px 12px' },
-  divider:    { height: 1, background: 'rgba(255,255,255,0.05)', marginBottom: 8 },
-  taskRow:    { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', transition: 'background 0.12s', marginBottom: 4, border: '1px solid rgba(255,255,255,0.04)' },
-  taskName:   { fontSize: 12.5, fontWeight: 500, color: '#e5e7eb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  taskMeta:   { fontSize: 11, color: '#4b5563', display: 'flex', gap: 8, marginTop: 2 },
-  subBadge:   { fontSize: 10, color: '#4b5563', background: '#111', padding: '1px 6px', borderRadius: 8, whiteSpace: 'nowrap', flexShrink: 0 },
+  divider:    { height: 1, background: 'var(--brd)', marginBottom: 8 },
+  taskRow:    { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, cursor: 'pointer', transition: 'background 0.12s', marginBottom: 4, border: '1px solid var(--row-brd)' },
+  taskName:   { fontSize: 12.5, fontWeight: 500, color: 'var(--txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  taskMeta:   { fontSize: 11, color: 'var(--txt3)', display: 'flex', gap: 8, marginTop: 2 },
+  subBadge:   { fontSize: 10, color: 'var(--txt3)', background: 'var(--input-bg)', padding: '1px 6px', borderRadius: 8, whiteSpace: 'nowrap', flexShrink: 0 },
 }
