@@ -31,7 +31,6 @@ export default function Dashboard() {
   const [me,       setMe]       = useState<any>(null)
   const [tasks,    setTasks]    = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
-  const [users,    setUsers]    = useState<any[]>([])
   const [notifs,   setNotifs]   = useState<any[]>([])
   const [loading,  setLoading]  = useState(true)
 
@@ -41,17 +40,15 @@ export default function Dashboard() {
       if (!session) return
       const { data: u } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
       setMe({ ...u, email: session.user.email })
-      const [{ data: t }, { data: p }, { data: us }, { data: n }] = await Promise.all([
+      const [{ data: t }, { data: p }, { data: n }] = await Promise.all([
         supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Projects').select('*').order('created_at'),
-        supabase.from('Users').select('id,full_name,email,role'),
         supabase.from('Notifications').select('*')
           .eq('user_id', session.user.id).eq('is_read', false)
           .order('created_at', { ascending: false }).limit(5),
       ])
       setTasks(t || [])
       setProjects(p || [])
-      setUsers(us || [])
       setNotifs(n || [])
       setLoading(false)
     }
@@ -89,7 +86,6 @@ export default function Dashboard() {
     { label: 'Overdue',       value: overdue.length,  color: 'var(--red)',    accent: '#c5221f', icon: '⚠️', onClick: overdue.length > 0 ? () => router.push('/all-tasks') : undefined },
     { label: 'In Progress',   value: inProg,          color: 'var(--amber)',  accent: '#b45309', icon: '⏳' },
     { label: 'Completed',     value: completed,       color: 'var(--accent)', accent: '#2e7d32', icon: '✅' },
-    { label: 'Team Members',  value: users.length,    color: '#9c27b0',       accent: '#9c27b0', icon: '👥' },
   ]
 
   const TaskMini = ({ t }: { t: any }) => {
@@ -113,7 +109,7 @@ export default function Dashboard() {
     <AppShell title="Dashboard">
 
       {/* ── Stat Cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 12, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
         {STATS.map(s => (
           <div key={s.label} className="stat-card"
             onClick={s.onClick}
