@@ -114,6 +114,9 @@ export default function AllProjects() {
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <Link href="/tasks/create" style={S.iconBtn}>+ Task</Link>
+                {(myRole === 'Manager' || myRole === 'Admin') && (
+                  <Link href={`/projects/${proj.id}`} style={{ ...S.iconBtn, color: 'var(--blue)', borderColor: 'rgba(26,115,232,0.2)', background: 'var(--blue2)' }}>✏ Edit</Link>
+                )}
                 {canDelete && (
                   <button onClick={() => deleteProject(proj)} style={{ ...S.iconBtn, color: 'var(--red)', borderColor: 'rgba(197,34,31,0.2)' }}>🗑</button>
                 )}
