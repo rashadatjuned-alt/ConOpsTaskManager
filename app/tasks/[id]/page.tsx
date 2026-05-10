@@ -10,14 +10,14 @@ const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 const TYPES    = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
 
 const STATUS_DOT: Record<string, string> = {
-  'Not Started': '#6b7280', 'In Progress': '#3b82f6',
+  'Not Started': 'var(--txt3)', 'In Progress': '#3b82f6',
   'On-Hold': '#f59e0b', 'Completed': '#22c55e',
 }
 const STATUS_PILL: Record<string, { bg: string; color: string }> = {
-  'Not Started': { bg: '#1f2937', color: '#9ca3af' },
-  'In Progress': { bg: '#1e3a5f', color: '#60a5fa' },
-  'On-Hold':     { bg: '#3d2400', color: '#f59e0b' },
-  'Completed':   { bg: '#052e16', color: '#4ade80' },
+  'Not Started': { bg: 'var(--pill-ns-bg)', color: 'var(--pill-ns-txt)' },
+  'In Progress': { bg: 'var(--blue2)', color: 'var(--blue)' },
+  'On-Hold':     { bg: 'var(--amber2)', color: 'var(--amber)' },
+  'Completed':   { bg: 'var(--accent2)', color: 'var(--accent)' },
 }
 
 function Pill({ status }: { status: string }) {
@@ -287,7 +287,7 @@ export default function TaskDetail() {
   }
 
   if (loading) return <AppShell title="Task Detail"><div style={S.loading}>Loading...</div></AppShell>
-  if (!task)   return <AppShell title="Task Detail"><div style={{ color: '#f87171', padding: 20 }}>Task not found.</div></AppShell>
+  if (!task)   return <AppShell title="Task Detail"><div style={{ color: 'var(--red)', padding: 20 }}>Task not found.</div></AppShell>
 
   const taskAssignees = assigneesFromRow(task)
   const editAssignees: string[] = editing ? (editTask?.assignees || []) : taskAssignees
@@ -369,7 +369,7 @@ export default function TaskDetail() {
               <label style={S.label}>Description</label>
               {editing
                 ? <textarea style={S.textarea} value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
-                : <div style={{ ...S.viewVal, color: task.description ? '#d1d5db' : '#4b5563' }}>{task.description || 'No description.'}</div>
+                : <div style={{ ...S.viewVal, color: task.description ? 'var(--txt2)' : 'var(--txt3)' }}>{task.description || 'No description.'}</div>
               }
             </div>
 
@@ -454,7 +454,7 @@ export default function TaskDetail() {
                         {editing
                           ? <input style={S.inlineInput} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://…" />
                           : r.link
-                            ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', fontSize: 12 }}>{r.link}</a>
+                            ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', fontSize: 12 }}>{r.link}</a>
                             : '—'
                         }
                       </td>
@@ -493,8 +493,8 @@ export default function TaskDetail() {
               ))}
             </div>
             {isRecurring && task.start_date && task.end_date && (
-              <div style={{ marginTop: 10, fontSize: 12, color: '#6b7280', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
-                Next: <strong style={{ color: '#d1d5db' }}>{nextRecurrence(task.start_date, task.end_date, task.type).start}</strong>
+              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--txt3)', borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
+                Next: <strong style={{ color: 'var(--txt2)' }}>{nextRecurrence(task.start_date, task.end_date, task.type).start}</strong>
               </div>
             )}
           </div>
@@ -507,7 +507,7 @@ export default function TaskDetail() {
           <div style={S.cardTitle}>
             Subtasks
             {subtasks.length > 0 && (
-              <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 8, fontWeight: 400 }}>
+              <span style={{ fontSize: 12, color: 'var(--txt3)', marginLeft: 8, fontWeight: 400 }}>
                 {subtasks.filter((s: any) => s.status === 'Completed').length} / {subtasks.length} completed
               </span>
             )}
@@ -570,7 +570,7 @@ export default function TaskDetail() {
                     <label style={S.label}>Description</label>
                     {editing
                       ? <textarea style={S.textarea} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Optional…" />
-                      : <div style={{ ...S.viewVal, color: s.description ? '#d1d5db' : '#4b5563' }}>{s.description || '—'}</div>
+                      : <div style={{ ...S.viewVal, color: s.description ? 'var(--txt2)' : 'var(--txt3)' }}>{s.description || '—'}</div>
                     }
                   </div>
 
@@ -579,7 +579,7 @@ export default function TaskDetail() {
                     {editing ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
                         {taskAssigneeList.length === 0
-                          ? <span style={{ fontSize: 11, color: '#4b5563' }}>Assign people to the task first.</span>
+                          ? <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Assign people to the task first.</span>
                           : taskAssigneeList.map(name => {
                               const sel = (s.assignees || []).includes(name)
                               return (
@@ -608,40 +608,40 @@ export default function TaskDetail() {
 
 // ── styles ─────────────────────────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
-  loading:   { padding: 40, color: '#6b7280', textAlign: 'center' },
+  loading:   { padding: 40, color: 'var(--txt3)', textAlign: 'center' },
   topBar:    { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
-  backBtn:   { background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '5px 8px', color: '#9ca3af', cursor: 'pointer', display: 'flex' },
-  topTitle:  { flex: 1, fontSize: 15, fontWeight: 600, color: '#f3f4f6', letterSpacing: '-0.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  statusSelect: { padding: '4px 8px', borderRadius: 6, background: '#1f2937', border: '1px solid rgba(255,255,255,0.1)', color: '#9ca3af', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
+  backBtn:   { background: 'none', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 8px', color: 'var(--txt3)', cursor: 'pointer', display: 'flex' },
+  topTitle:  { flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--txt)', letterSpacing: '-0.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  statusSelect: { padding: '4px 8px', borderRadius: 6, background: 'var(--input-bg)', border: '1px solid var(--input-brd)', color: 'var(--txt)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
   recurBadge: { background: '#3d2400', color: '#f59e0b', fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500 },
-  editBtn:   { background: '#1d4ed8', color: '#bfdbfe', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
-  saveBtn:   { background: '#15803d', color: '#bbf7d0', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
-  cancelBtn: { background: 'rgba(255,255,255,0.06)', color: '#9ca3af', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
-  cloneBtn:  { background: 'rgba(255,255,255,0.06)', color: '#9ca3af', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
-  deleteBtn: { background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
-  recurBanner: { background: '#1c1400', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '9px 14px', fontSize: 12, color: '#fbbf24', marginBottom: 14 },
-  alertErr:  { background: '#2d0a0a', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
-  alertOk:   { background: '#052e16', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
+  editBtn:   { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  saveBtn:   { background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  cancelBtn: { background: 'var(--brd)', color: 'var(--txt3)', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  cloneBtn:  { background: 'var(--brd)', color: 'var(--txt3)', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  deleteBtn: { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  recurBanner: { background: 'var(--amber2)', border: '1px solid rgba(180,83,9,0.2)', borderRadius: 8, padding: '9px 14px', fontSize: 12, color: 'var(--amber)', marginBottom: 14 },
+  alertErr:  { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
+  alertOk:   { background: 'var(--accent2)', color: 'var(--accent)', border: '1px solid rgba(46,125,50,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
   twoCol:    { display: 'grid', gridTemplateColumns: '1fr 340px', gap: 14, marginBottom: 8 },
-  card:      { background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: 16, marginBottom: 12 },
-  cardTitle: { fontSize: 12, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 },
+  card:      { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 10, padding: 16, marginBottom: 12 },
+  cardTitle: { fontSize: 12, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 },
   fieldGroup:{ marginBottom: 12 },
-  label:     { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#4b5563', display: 'block', marginBottom: 5 },
-  viewVal:   { fontSize: 13, color: '#d1d5db', lineHeight: 1.5 },
-  input:     { width: '100%', padding: '7px 10px', background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#e5e7eb', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
-  textarea:  { width: '100%', padding: '7px 10px', background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#e5e7eb', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 72, resize: 'vertical' },
+  label:     { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', display: 'block', marginBottom: 5 },
+  viewVal:   { fontSize: 13, color: 'var(--txt2)', lineHeight: 1.5 },
+  input:     { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
+  textarea:  { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 72, resize: 'vertical' },
   grid2:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
-  chip:      { padding: '3px 10px', fontSize: 12, borderRadius: 20, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'transparent', color: '#9ca3af', fontFamily: 'inherit', transition: 'all 0.12s' },
-  chipSel:   { background: '#15803d', color: '#bbf7d0', borderColor: '#15803d' },
-  addBtn:    { background: '#1d4ed8', color: '#bfdbfe', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer' },
+  chip:      { padding: '3px 10px', fontSize: 12, borderRadius: 20, border: '1px solid var(--input-brd)', cursor: 'pointer', background: 'transparent', color: 'var(--txt3)', fontFamily: 'inherit', transition: 'all 0.12s' },
+  chipSel:   { background: 'var(--accent)', color: 'var(--accent2)', borderColor: 'var(--accent)' },
+  addBtn:    { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer' },
   infoGrid:  { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
-  infoLabel: { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#4b5563', marginBottom: 3 },
-  infoVal:   { fontSize: 12, color: '#d1d5db' },
-  th:        { textAlign: 'left', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#4b5563', padding: '4px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)' },
-  td:        { fontSize: 12, color: '#9ca3af', padding: '7px 8px', borderBottom: '1px solid rgba(255,255,255,0.04)', verticalAlign: 'middle' },
-  inlineInput: { background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: '3px 7px', color: '#e5e7eb', fontSize: 12, fontFamily: 'inherit', width: '100%', outline: 'none' },
+  infoLabel: { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 3 },
+  infoVal:   { fontSize: 12, color: 'var(--txt2)' },
+  th:        { textAlign: 'left', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', padding: '4px 8px', borderBottom: '1px solid var(--brd)' },
+  td:        { fontSize: 12, color: 'var(--txt3)', padding: '7px 8px', borderBottom: '1px solid var(--row-brd)', verticalAlign: 'middle' },
+  inlineInput: { background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 4, padding: '3px 7px', color: 'var(--txt)', fontSize: 12, fontFamily: 'inherit', width: '100%', outline: 'none' },
   removeBtn: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, padding: '2px 4px' },
-  subCard:   { background: '#111', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '12px 14px' },
-  subNum:    { fontSize: 11, fontWeight: 600, color: '#4b5563', textTransform: 'uppercase' },
-  emptyMsg:  { fontSize: 12, color: '#4b5563', textAlign: 'center', padding: '16px 0' },
+  subCard:   { background: 'var(--input-bg)', border: '1px solid var(--card-brd)', borderRadius: 8, padding: '12px 14px' },
+  subNum:    { fontSize: 11, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase' },
+  emptyMsg:  { fontSize: 12, color: 'var(--txt3)', textAlign: 'center', padding: '16px 0' },
 }
