@@ -8,14 +8,14 @@ import Link from 'next/link'
 import { getAssignees } from '@/lib/projectUtils'
 
 const STATUS_DOT: Record<string, string> = {
-  'Not Started': '#6b7280', 'In Progress': '#3b82f6',
+  'Not Started': 'var(--txt3)', 'In Progress': '#3b82f6',
   'On-Hold': '#f59e0b', 'Completed': '#22c55e',
 }
 const STATUS_PILL: Record<string, { bg: string; color: string }> = {
-  'Not Started': { bg: '#1f2937', color: '#9ca3af' },
-  'In Progress': { bg: '#1e3a5f', color: '#60a5fa' },
-  'On-Hold':     { bg: '#3d2400', color: '#f59e0b' },
-  'Completed':   { bg: '#052e16', color: '#4ade80' },
+  'Not Started': { bg: 'var(--pill-ns-bg)', color: 'var(--pill-ns-txt)' },
+  'In Progress': { bg: 'var(--blue2)', color: 'var(--blue)' },
+  'On-Hold':     { bg: 'var(--amber2)', color: 'var(--amber)' },
+  'Completed':   { bg: 'var(--accent2)', color: 'var(--accent)' },
 }
 const STATUSES  = ['Not Started', 'In Progress', 'On-Hold', 'Completed']
 const TASK_TYPES = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
@@ -63,7 +63,7 @@ export default function AllTasks() {
 
   if (myRole && myRole === 'Team Member') return (
     <AppShell title="All Tasks">
-      <div style={{ background: '#2d0a0a', color: '#f87171', padding: '10px 14px', borderRadius: 6, fontSize: 12 }}>
+      <div style={{ background: 'var(--red2)', color: 'var(--red)', padding: '10px 14px', borderRadius: 6, fontSize: 12 }}>
         Access denied — Managers and Admins only.
       </div>
     </AppShell>
@@ -88,7 +88,7 @@ export default function AllTasks() {
     getAssignees(t).some((a: any) => a.toLowerCase() === fAssignee.toLowerCase())
   )
 
-  if (loading) return <AppShell title="All Tasks"><div style={{ padding: 40, color: '#6b7280', textAlign: 'center' }}>Loading…</div></AppShell>
+  if (loading) return <AppShell title="All Tasks"><div style={{ padding: 40, color: 'var(--txt3)', textAlign: 'center' }}>Loading…</div></AppShell>
 
   return (
     <AppShell title="All Tasks">
@@ -110,7 +110,7 @@ export default function AllTasks() {
           <option value="All">All Assignees</option>
           {users.map((u: any) => <option key={u.id} value={u.full_name}>{u.full_name}</option>)}
         </select>
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#4b5563' }}>{filtered.length} tasks</div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--txt3)' }}>{filtered.length} tasks</div>
         <Link href="/tasks/create" style={S.newBtn}>+ Create Task</Link>
       </div>
 
@@ -141,28 +141,28 @@ export default function AllTasks() {
                 style={{ ...S.taskRow, ...(over ? S.overdueRow : {}) }}
                 onClick={() => router.push(`/tasks/${t.id}`)}>
                 <div style={{ ...S.cell, flex: 3 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[t.status] || '#6b7280', flexShrink: 0 }} />
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[t.status] || 'var(--txt3)', flexShrink: 0 }} />
                   <div style={{ minWidth: 0 }}>
                     <div style={S.taskName}>{t.topic}</div>
                     {subs.length > 0 && (
-                      <div style={{ fontSize: 10, color: '#4b5563' }}>
+                      <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
                         {subs.filter((s: any) => s.status === 'Completed').length}/{subs.length} subtasks
                       </div>
                     )}
                   </div>
                 </div>
-                <div style={{ ...S.cell, flex: 2, color: '#6b7280', fontSize: 11 }}>{t.project_name || '—'}</div>
+                <div style={{ ...S.cell, flex: 2, color: 'var(--txt3)', fontSize: 11 }}>{t.project_name || '—'}</div>
                 <div style={{ ...S.cell, flex: 1, fontSize: 11 }}>
                   {t.type !== 'One-time'
                     ? <span style={{ background: '#3d2400', color: '#f59e0b', fontSize: 9, padding: '1px 6px', borderRadius: 8 }}>↻ {t.type}</span>
-                    : <span style={{ color: '#4b5563', fontSize: 11 }}>One-time</span>
+                    : <span style={{ color: 'var(--txt3)', fontSize: 11 }}>One-time</span>
                   }
                 </div>
-                <div style={{ ...S.cell, flex: 1.2, color: '#6b7280', fontFamily: 'monospace', fontSize: 11 }}>{t.start_date || '—'}</div>
-                <div style={{ ...S.cell, flex: 1.2, color: over ? '#f87171' : '#6b7280', fontFamily: 'monospace', fontSize: 11 }}>
+                <div style={{ ...S.cell, flex: 1.2, color: 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>{t.start_date || '—'}</div>
+                <div style={{ ...S.cell, flex: 1.2, color: over ? 'var(--red)' : 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>
                   {over && '⚠ '}{t.end_date || '—'}
                 </div>
-                <div style={{ ...S.cell, flex: 2, color: '#6b7280', fontSize: 11 }}>{assignees.join(', ') || '—'}</div>
+                <div style={{ ...S.cell, flex: 2, color: 'var(--txt3)', fontSize: 11 }}>{assignees.join(', ') || '—'}</div>
                 <div style={{ ...S.cell, flex: 1.5 }}><Pill status={t.status} /></div>
                 {canDelete && (
                   <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end' }}
@@ -180,15 +180,15 @@ export default function AllTasks() {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  sel:        { padding: '5px 9px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, background: '#1a1a1a', fontSize: 11.5, color: '#9ca3af', fontFamily: 'inherit', cursor: 'pointer' },
-  newBtn:     { background: '#15803d', color: '#bbf7d0', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' },
-  empty:      { textAlign: 'center', padding: '4rem 0', color: '#6b7280', fontSize: 13 },
-  tableWrap:  { background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, overflow: 'hidden' },
-  headerRow:  { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: '#111', borderBottom: '1px solid rgba(255,255,255,0.06)' },
-  col:        { fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#374151' },
-  taskRow:    { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background 0.12s' },
+  sel:        { padding: '5px 9px', border: '1px solid var(--brd2)', borderRadius: 6, background: 'var(--card-bg)', fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'inherit', cursor: 'pointer' },
+  newBtn:     { background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' },
+  empty:      { textAlign: 'center', padding: '4rem 0', color: 'var(--txt3)', fontSize: 13 },
+  tableWrap:  { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 12, overflow: 'hidden' },
+  headerRow:  { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: 'var(--input-bg)', borderBottom: '1px solid var(--brd)' },
+  col:        { fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--txt3)' },
+  taskRow:    { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--row-brd)', cursor: 'pointer', transition: 'background 0.12s' },
   overdueRow: { background: 'rgba(239,68,68,0.04)', borderLeft: '2px solid rgba(239,68,68,0.35)' },
   cell:       { display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' },
-  taskName:   { fontSize: 12.5, fontWeight: 500, color: '#e5e7eb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  delBtn:     { background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 13, padding: '3px 5px' },
+  taskName:   { fontSize: 12.5, fontWeight: 500, color: 'var(--txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  delBtn:     { background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '3px 5px' },
 }
