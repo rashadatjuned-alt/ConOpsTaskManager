@@ -133,8 +133,8 @@ export default function CreateProject() {
                     style={{ ...S.chip, ...(sel ? S.chipSel : {}), display: 'flex', alignItems: 'center', gap: 6 }}>
                     <div style={{
                       width: 18, height: 18, borderRadius: '50%',
-                      background: sel ? 'rgba(255,255,255,0.2)' : '#1f2937',
-                      color: sel ? '#bbf7d0' : '#6b7280',
+                      background: sel ? 'var(--accent)' : 'var(--bg3)',
+                      color: sel ? 'var(--accent2)' : 'var(--txt3)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 8, fontWeight: 700, flexShrink: 0,
                     }}>{ini}</div>
@@ -144,7 +144,7 @@ export default function CreateProject() {
               })}
             </div>
             {members.length > 0 && (
-              <div style={{ fontSize: 11, color: '#4b5563', marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 6 }}>
                 {members.length} member{members.length !== 1 ? 's' : ''} selected
               </div>
             )}
@@ -155,7 +155,7 @@ export default function CreateProject() {
         <div style={S.card}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div style={S.cardTitle}>
-              Main Tasks <span style={{ color: '#4b5563', fontWeight: 400 }}>({tasks.length})</span>
+              Main Tasks <span style={{ color: 'var(--txt3)', fontWeight: 400 }}>({tasks.length})</span>
             </div>
             <button style={S.addBtn} onClick={addTask}>+ Add Task</button>
           </div>
@@ -200,7 +200,7 @@ export default function CreateProject() {
                   <div style={S.fg}>
                     <label style={S.lbl}>Assign To (from project team)</label>
                     {selectedTeam.length === 0 ? (
-                      <div style={{ fontSize: 11, color: '#4b5563' }}>Add team members to the project first.</div>
+                      <div style={{ fontSize: 11, color: 'var(--txt3)' }}>Add team members to the project first.</div>
                     ) : (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
                         {selectedTeam.map((u: any) => {
@@ -234,21 +234,21 @@ export default function CreateProject() {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  alertErr:  { background: '#2d0a0a', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
-  card:      { background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: 16, marginBottom: 12 },
-  cardTitle: { fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 },
+  alertErr:  { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
+  card:      { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 10, padding: 16, marginBottom: 12 },
+  cardTitle: { fontSize: 10, fontWeight: 700, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 },
   grid2:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
   fg:        { marginBottom: 12 },
-  lbl:       { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#4b5563', display: 'block', marginBottom: 5 },
-  input:     { width: '100%', padding: '7px 10px', background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#e5e7eb', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
-  textarea:  { width: '100%', padding: '7px 10px', background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: '#e5e7eb', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 72, resize: 'vertical' },
-  chip:      { padding: '3px 10px', fontSize: 12, borderRadius: 20, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'transparent', color: '#9ca3af', fontFamily: 'inherit' },
-  chipSel:   { background: '#15803d', color: '#bbf7d0', borderColor: '#15803d' },
-  addBtn:    { background: '#1d4ed8', color: '#bfdbfe', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
-  saveBtn:   { background: '#15803d', color: '#bbf7d0', border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
-  cancelBtn: { background: 'rgba(255,255,255,0.06)', color: '#9ca3af', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
-  taskCard:  { background: '#111', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '12px 14px' },
-  taskNum:   { fontSize: 10, fontWeight: 600, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.06em' },
-  emptyMsg:  { fontSize: 12, color: '#4b5563', textAlign: 'center', padding: '14px 0' },
+  lbl:       { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', display: 'block', marginBottom: 5 },
+  input:     { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
+  textarea:  { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 72, resize: 'vertical' },
+  chip:      { padding: '3px 10px', fontSize: 12, borderRadius: 20, border: '1px solid var(--input-brd)', cursor: 'pointer', background: 'transparent', color: 'var(--txt3)', fontFamily: 'inherit' },
+  chipSel:   { background: 'var(--accent)', color: 'var(--accent2)', borderColor: 'var(--accent)' },
+  addBtn:    { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  saveBtn:   { background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelBtn: { background: 'var(--brd)', color: 'var(--txt3)', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '7px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
+  taskCard:  { background: 'var(--input-bg)', border: '1px solid var(--card-brd)', borderRadius: 8, padding: '12px 14px' },
+  taskNum:   { fontSize: 10, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' },
+  emptyMsg:  { fontSize: 12, color: 'var(--txt3)', textAlign: 'center', padding: '14px 0' },
   removeBtn: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, padding: '2px 4px' },
 }
