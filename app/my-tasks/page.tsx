@@ -6,16 +6,16 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 const STATUS_DOT: Record<string, string> = {
-  'Not Started': '#6b7280',
+  'Not Started': 'var(--txt3)',
   'In Progress': '#3b82f6',
   'On-Hold':     '#f59e0b',
   'Completed':   '#22c55e',
 }
 const STATUS_PILL: Record<string, { bg: string; color: string }> = {
-  'Not Started': { bg: '#1f2937', color: '#9ca3af' },
-  'In Progress': { bg: '#1e3a5f', color: '#60a5fa' },
-  'On-Hold':     { bg: '#3d2400', color: '#f59e0b' },
-  'Completed':   { bg: '#052e16', color: '#4ade80' },
+  'Not Started': { bg: 'var(--pill-ns-bg)', color: 'var(--pill-ns-txt)' },
+  'In Progress': { bg: 'var(--blue2)', color: 'var(--blue)' },
+  'On-Hold':     { bg: 'var(--amber2)', color: 'var(--amber)' },
+  'Completed':   { bg: 'var(--accent2)', color: 'var(--accent)' },
 }
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 
@@ -35,7 +35,7 @@ function Dot({ status }: { status: string }) {
   return (
     <div style={{
       width: 7, height: 7, borderRadius: '50%',
-      background: STATUS_DOT[status] || '#6b7280',
+      background: STATUS_DOT[status] || 'var(--txt3)',
       flexShrink: 0, marginTop: 1,
     }} />
   )
@@ -179,13 +179,13 @@ export default function MyTasks() {
                       <span style={styles.subCount}>{subs.length} subtask{subs.length !== 1 ? 's' : ''}</span>
                     )}
                   </div>
-                  <div style={{ ...styles.cell, flex: 2, color: '#9ca3af' }}>{task.project_name || '—'}</div>
-                  <div style={{ ...styles.cell, flex: 1.2, color: '#9ca3af', fontFamily: 'monospace', fontSize: 11 }}>{task.start_date || '—'}</div>
-                  <div style={{ ...styles.cell, flex: 1.2, color: over ? '#f87171' : '#9ca3af', fontFamily: 'monospace', fontSize: 11 }}>
+                  <div style={{ ...styles.cell, flex: 2, color: 'var(--txt3)' }}>{task.project_name || '—'}</div>
+                  <div style={{ ...styles.cell, flex: 1.2, color: 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>{task.start_date || '—'}</div>
+                  <div style={{ ...styles.cell, flex: 1.2, color: over ? '#f87171' : 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>
                     {over && <span style={{ marginRight: 3 }}>⚠</span>}
                     {task.end_date || '—'}
                   </div>
-                  <div style={{ ...styles.cell, flex: 2, color: '#9ca3af', fontSize: 11 }}>
+                  <div style={{ ...styles.cell, flex: 2, color: 'var(--txt3)', fontSize: 11 }}>
                     {assignees.join(', ') || '—'}
                   </div>
                   <div style={{ ...styles.cell, flex: 1.5 }}>
@@ -199,11 +199,11 @@ export default function MyTasks() {
                     {/* subtask header */}
                     <div style={styles.subHeader}>
                       <div style={{ width: 24 }} />
-                      <div style={{ flex: 3, fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Subtask</div>
-                      <div style={{ flex: 1.2, fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Start</div>
-                      <div style={{ flex: 1.2, fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.06em' }}>End</div>
-                      <div style={{ flex: 2, fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assignee</div>
-                      <div style={{ flex: 1.5, fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Status</div>
+                      <div style={{ flex: 3, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Subtask</div>
+                      <div style={{ flex: 1.2, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Start</div>
+                      <div style={{ flex: 1.2, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>End</div>
+                      <div style={{ flex: 2, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assignee</div>
+                      <div style={{ flex: 1.5, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Status</div>
                     </div>
                     {subs.map(sub => {
                       const subAssignees = assigneesFromRow(sub)
@@ -214,12 +214,12 @@ export default function MyTasks() {
                           onClick={() => router.push(`/tasks/${task.id}`)}
                         >
                           <div style={{ width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <span style={{ color: '#4b5563', fontSize: 11 }}>↳</span>
+                            <span style={{ color: 'var(--txt3)', fontSize: 11 }}>↳</span>
                           </div>
-                          <div style={{ flex: 3, fontSize: 12, color: '#d1d5db' }}>{sub.topic}</div>
-                          <div style={{ flex: 1.2, fontSize: 11, color: '#6b7280', fontFamily: 'monospace' }}>{sub.start_date || '—'}</div>
-                          <div style={{ flex: 1.2, fontSize: 11, color: '#6b7280', fontFamily: 'monospace' }}>{sub.end_date || '—'}</div>
-                          <div style={{ flex: 2, fontSize: 11, color: '#6b7280' }}>{subAssignees.join(', ') || '—'}</div>
+                          <div style={{ flex: 3, fontSize: 12, color: 'var(--txt2)' }}>{sub.topic}</div>
+                          <div style={{ flex: 1.2, fontSize: 11, color: 'var(--txt3)', fontFamily: 'monospace' }}>{sub.start_date || '—'}</div>
+                          <div style={{ flex: 1.2, fontSize: 11, color: 'var(--txt3)', fontFamily: 'monospace' }}>{sub.end_date || '—'}</div>
+                          <div style={{ flex: 2, fontSize: 11, color: 'var(--txt3)' }}>{subAssignees.join(', ') || '—'}</div>
                           <div style={{ flex: 1.5 }} onClick={e => e.stopPropagation()}>
                             <select
                               value={sub.status}
@@ -246,31 +246,31 @@ export default function MyTasks() {
 // ── styles ────────────────────────────────────────────────────────────
 const styles: Record<string, React.CSSProperties> = {
   loading: {
-    padding: 40, color: '#6b7280', textAlign: 'center', fontSize: 13,
+    padding: 40, color: 'var(--txt3)', textAlign: 'center', fontSize: 13,
   },
   empty: {
-    textAlign: 'center', padding: '4rem 0', color: '#6b7280', fontSize: 13,
+    textAlign: 'center', padding: '4rem 0', color: 'var(--txt3)', fontSize: 13,
   },
   tableWrap: {
-    background: '#1a1a1a',
-    border: '1px solid rgba(255,255,255,0.07)',
+    background: 'var(--card-bg)',
+    border: '1px solid var(--card-brd)',
     borderRadius: 12,
     overflow: 'hidden',
   },
   headerRow: {
     display: 'flex', alignItems: 'center', gap: 8,
     padding: '10px 16px',
-    background: '#111111',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    background: 'var(--input-bg)',
+    borderBottom: '1px solid var(--brd)',
   },
   col: {
     fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const,
-    letterSpacing: '0.07em', color: '#4b5563',
+    letterSpacing: '0.07em', color: 'var(--txt3)',
   },
   taskRow: {
     display: 'flex', alignItems: 'center', gap: 8,
     padding: '11px 16px',
-    borderBottom: '1px solid rgba(255,255,255,0.05)',
+    borderBottom: '1px solid var(--brd)',
     cursor: 'pointer',
     transition: 'background 0.14s',
   } as React.CSSProperties,
@@ -284,19 +284,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cell: {
     display: 'flex', alignItems: 'center', gap: 6,
-    fontSize: 12, color: '#e5e7eb', overflow: 'hidden',
+    fontSize: 12, color: 'var(--txt)', overflow: 'hidden',
   },
   taskName: {
-    fontWeight: 500, fontSize: 13, color: '#f3f4f6',
+    fontWeight: 500, fontSize: 13, color: 'var(--txt)',
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
   subCount: {
-    fontSize: 10, color: '#4b5563', background: '#252525',
+    fontSize: 10, color: 'var(--txt3)', background: 'var(--bg3)',
     padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0,
   },
   subtaskBlock: {
-    background: '#131313',
-    borderBottom: '1px solid rgba(255,255,255,0.05)',
+    background: 'var(--bg)',
+    borderBottom: '1px solid var(--brd)',
   },
   subHeader: {
     display: 'flex', alignItems: 'center', gap: 8,
@@ -310,8 +310,8 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'background 0.12s',
   },
   statusSelect: {
-    background: '#1f2937', color: '#9ca3af',
-    border: '1px solid rgba(255,255,255,0.1)',
+    background: '#1f2937', color: 'var(--txt3)',
+    border: '1px solid var(--input-brd)',
     borderRadius: 6, padding: '3px 6px', fontSize: 11,
     cursor: 'pointer', fontFamily: 'inherit', width: '100%',
   },
