@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:#141414;--bg2:#1e1e1e;--bg3:#252525;
+  --sidebar:#0f0f0f;
+  --txt:#e8e6e0;--txt2:#a0a09a;--txt3:#5a5a55;
+  --accent:#6ab33e;--accent2:#1a2e10;
+  --blue:#4d8ef0;--blue2:#0f1e38;
+  --amber:#e09940;--amber2:#2a1e08;
+  --red:#e05555;--red2:#2a0f0f;
+  --brd:rgba(255,255,255,0.07);--brd2:rgba(255,255,255,0.12);
+  --shd:0 1px 3px rgba(0,0,0,0.4),0 4px 16px rgba(0,0,0,0.3);
+  --r:8px;--rl:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;font-size:14px;color:var(--txt);background:var(--bg3);}
+.app{display:flex;height:100vh;}
+.sidebar{width:220px;background:var(--sidebar);border-right:1px solid var(--brd);display:flex;flex-direction:column;flex-shrink:0;height:100vh;overflow-y:auto;}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.content{flex:1;overflow-y:auto;padding:20px;background:var(--bg3);}
+.sidebar-logo{padding:16px 16px 14px;font-size:15px;font-weight:600;color:var(--txt);border-bottom:1px solid var(--brd);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.nav-label{font-size:10px;color:var(--txt3);padding:8px 16px 4px;letter-spacing:0.08em;text-transform:uppercase;}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r);cursor:pointer;color:rgba(255,255,255,0.4);font-size:12.5px;text-decoration:none;transition:background 0.15s;margin:1px 8px;position:relative;}
+.nav-item:hover{background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.7);}
+.nav-item.active{background:rgba(106,179,62,0.15);color:#8ec95a;}
+.nav-item.active::before{content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:18px;background:#8ec95a;border-radius:0 3px 3px 0;}
+.nav-badge{margin-left:auto;background:rgba(224,85,85,0.25);color:#fca5a5;font-size:10px;padding:1px 6px;border-radius:10px;}
+.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid var(--brd);}
+.avatar{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;flex-shrink:0;background:rgba(106,179,62,0.2);color:#8ec95a;}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--brd);padding:10px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0;}
+.topbar-title{font-size:15px;font-weight:500;flex:1;color:var(--txt);}
