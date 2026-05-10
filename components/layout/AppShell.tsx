@@ -6,8 +6,8 @@ import { useTheme } from '@/lib/theme'
 import Link from 'next/link'
 
 function Sidebar({ user, unreadCount }: { user: any; unreadCount: number }) {
-  const pathname = usePathname()
-  const router = useRouter()
+  const pathname  = usePathname()
+  const router    = useRouter()
   const { theme, toggle } = useTheme()
 
   const signOut = async () => {
@@ -16,10 +16,13 @@ function Sidebar({ user, unreadCount }: { user: any; unreadCount: number }) {
   }
 
   const isActive = (href: string) =>
-    pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'))
+    pathname === href || (href.length > 1 && pathname.startsWith(href + '/'))
 
-  const NavItem = ({ href, label, badge }: { href: string; label: string; badge?: number }) => (
+  const NavItem = ({ href, icon, label, badge }: {
+    href: string; icon: string; label: string; badge?: number
+  }) => (
     <Link href={href} className={`nav-item ${isActive(href) ? 'active' : ''}`}>
+      <span style={{ fontSize: 15, width: 18, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
       {label}
       {badge != null && badge > 0 && <span className="nav-badge">{badge}</span>}
     </Link>
@@ -27,49 +30,68 @@ function Sidebar({ user, unreadCount }: { user: any; unreadCount: number }) {
 
   return (
     <div className="sidebar">
-      <div className="sidebar-logo">⬛ ConOps Tasker</div>
+      {/* Logo */}
+      <div className="sidebar-logo">
+        <span style={{ fontSize: 18 }}>⬛</span>
+        ConOps Tasker
+      </div>
 
+      {/* Main nav */}
       <div className="nav-label">Main</div>
-      <NavItem href="/dashboard"     label="🏠 Dashboard" />
-      <NavItem href="/my-tasks"      label="☑ My Tasks" />
-      <NavItem href="/my-projects"   label="📁 My Projects" />
-      <NavItem href="/notifications" label="🔔 Notifications" badge={unreadCount} />
+      <NavItem href="/dashboard"     icon="🏠" label="Dashboard" />
+      <NavItem href="/my-tasks"      icon="☑" label="My Tasks" />
+      <NavItem href="/my-projects"   icon="📁" label="My Projects" />
+      <NavItem href="/notifications"  icon="🔔" label="Notifications" badge={unreadCount} />
 
       <div className="nav-label">Tasks</div>
-      <NavItem href="/tasks/create"  label="+ Create Task" />
+      <NavItem href="/tasks/create"  icon="＋" label="Create Task" />
 
       {(user.role === 'Manager' || user.role === 'Admin') && (
         <>
           <div className="nav-label">Management</div>
-          <NavItem href="/all-projects"    label="⊞ All Projects" />
-          <NavItem href="/all-tasks"       label="≡ All Tasks" />
-          <NavItem href="/projects/create" label="+ New Project" />
+          <NavItem href="/all-projects"    icon="⊞" label="All Projects" />
+          <NavItem href="/all-tasks"       icon="≡" label="All Tasks" />
+          <NavItem href="/projects/create" icon="＋" label="New Project" />
         </>
       )}
 
       {user.role === 'Admin' && (
         <>
           <div className="nav-label">Admin</div>
-          <NavItem href="/admin/users"         label="👥 Users" />
-          <NavItem href="/admin/notifications" label="📢 Notifications" />
+          <NavItem href="/admin/users"          icon="👥" label="Users" />
+          <NavItem href="/admin/notifications"  icon="📢" label="Notifications" />
         </>
       )}
 
+      {/* Footer */}
       <div className="sidebar-footer">
         {/* Theme toggle */}
-        <button onClick={toggle} className="theme-toggle" style={{ width: '100%', marginBottom: 10, justifyContent: 'center' }}>
-          {theme === 'light' ? '🌙 Dark Mode' : '☀ Light Mode'}
+        <button onClick={toggle} className="theme-toggle">
+          <span>{theme === 'light' ? '🌙' : '☀️'}</span>
+          {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
         </button>
 
-        {/* User info */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div className="avatar" style={{ width: 30, height: 30, fontSize: 11 }}>{user.initials}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.75)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{user.role}</div>
+        {/* User card */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <div className="avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
+            {user.initials}
           </div>
-          <button onClick={signOut} title="Sign out"
-            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 16, padding: '2px 4px', lineHeight: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 12.5, fontWeight: 600,
+              color: 'var(--user-name)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {user.name}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--user-role)' }}>{user.role}</div>
+          </div>
+          <button onClick={signOut} title="Sign out" style={{
+            background: 'none', border: 'none',
+            color: 'var(--nav-txt)', cursor: 'pointer',
+            fontSize: 16, padding: '3px 5px', lineHeight: 1,
+            borderRadius: 6, transition: 'color 0.14s',
+          }}>
             ⏻
           </button>
         </div>
@@ -81,9 +103,9 @@ function Sidebar({ user, unreadCount }: { user: any; unreadCount: number }) {
 const MemoSidebar = memo(Sidebar)
 
 export default function AppShell({ children, title }: { children: ReactNode; title: string }) {
-  const router = useRouter()
-  const [user, setUser]   = useState<any>(null)
-  const [unread, setUnread] = useState(0)
+  const router  = useRouter()
+  const [user,    setUser]    = useState<any>(null)
+  const [unread,  setUnread]  = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -91,17 +113,27 @@ export default function AppShell({ children, title }: { children: ReactNode; tit
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/auth'); return }
 
-      const { data: u } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
+      const { data: u } = await supabase
+        .from('Users').select('*').eq('id', session.user.id).single()
+
       const name = u?.full_name || session.user.email?.split('@')[0] || 'User'
       const parts = name.trim().split(' ')
       const initials = parts.length >= 2
         ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
         : name.slice(0, 2).toUpperCase()
 
-      setUser({ id: session.user.id, email: session.user.email, name, initials, role: u?.role || 'Team Member' })
+      setUser({
+        id: session.user.id,
+        email: session.user.email,
+        name, initials,
+        role: u?.role || 'Team Member',
+      })
 
-      const { data: n } = await supabase.from('Notifications')
-        .select('id').eq('user_id', session.user.id).eq('is_read', false)
+      const { data: n } = await supabase
+        .from('Notifications')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .eq('is_read', false)
       setUnread(n?.length || 0)
       setLoading(false)
     }
@@ -109,8 +141,12 @@ export default function AppShell({ children, title }: { children: ReactNode; tit
   }, [])
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#6b7280', fontSize: 13, background: 'var(--bg3)' }}>
-      Loading ConOps Tasker...
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', color: 'var(--txt3)', fontSize: 13,
+      background: 'var(--bg)', fontFamily: 'Inter, sans-serif',
+    }}>
+      Loading ConOps Tasker…
     </div>
   )
   if (!user) return null
