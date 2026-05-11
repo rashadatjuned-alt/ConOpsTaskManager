@@ -161,6 +161,32 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 }
 
 // ── Sidebar ───────────────────────────────────────────────
+function TacticalGridIcon({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="stg1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#1b4332"/>
+          <stop offset="100%" stopColor="#52b788"/>
+        </linearGradient>
+      </defs>
+      <rect width="100" height="100" rx="24" fill="url(#stg1)"/>
+      <rect x="16" y="16" width="22" height="22" rx="5" fill="white"/>
+      <rect x="44" y="16" width="22" height="22" rx="5" fill="rgba(255,255,255,0.45)"/>
+      <rect x="72" y="16" width="12" height="22" rx="5" fill="rgba(255,255,255,0.2)"/>
+      <rect x="16" y="44" width="22" height="22" rx="5" fill="white"/>
+      <rect x="44" y="44" width="22" height="22" rx="5" fill="white"/>
+      <rect x="72" y="44" width="12" height="22" rx="5" fill="rgba(255,255,255,0.45)"/>
+      <rect x="16" y="72" width="22" height="12" rx="5" fill="rgba(255,255,255,0.45)"/>
+      <rect x="44" y="72" width="22" height="12" rx="5" fill="white"/>
+      <rect x="72" y="72" width="12" height="12" rx="5" fill="white"/>
+      <path d="M20 27l5 5 9-9" stroke="#1b4332" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <path d="M20 55l5 5 9-9" stroke="#1b4332" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <path d="M48 55l5 5 9-9" stroke="#1b4332" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  )
+}
+
 function Sidebar({ user, unreadCount }: { user: any; unreadCount: number }) {
   const pathname = usePathname()
   const router   = useRouter()
