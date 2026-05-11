@@ -114,7 +114,7 @@ export default function Dashboard() {
       )}
 
       {/* Stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns:'repeat(5,1fr)', marginBottom:16 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:16 }}>
         <StatCard icon={<Folders size={16} color="#185FA5"/>}    label={isManager ? 'Total Tasks' : 'My Tasks'}  value={total}        color="blue" />
         <StatCard icon={<AlertCircle size={16} color="#cc3333"/>} label="Overdue"        value={overdue}          color="red"
           onClick={overdue > 0 ? () => router.push('/my-tasks') : undefined} />
@@ -270,10 +270,10 @@ export default function Dashboard() {
           return (
             <div key={status}>
               <div className="col-header">
-                <div style={{ width:8, height:8, borderRadius:'50%', background:
+                <div style={{ width:8, height:8, borderRadius:'50%', flexShrink:0, background:
                   status==='Not Started'?'#aaa':status==='In Progress'?'#378ADD':
                   status==='On-Hold'?'#EF9F27':'#639922' }}/>
-                {status}<span className="col-count">{group.length}</span>
+                <span>{status}</span><span className="col-count">{group.length}</span>
               </div>
               {group.length === 0
                 ? <div className="col-empty">No tasks</div>
