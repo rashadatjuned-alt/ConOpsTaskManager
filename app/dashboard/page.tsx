@@ -3,35 +3,20 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { StatusPill, StatusDot } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { getAssignees } from '@/lib/projectUtils'
+import { AlertCircle, CheckCircle2, TrendingUp, Folders, Users } from 'lucide-react'
 
-const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
-
-const STATUS_DOT: Record<string, string> = {
-  'Not Started': '#9ca3af',
-  'In Progress': 'var(--blue)',
-  'On-Hold':     'var(--amber)',
-  'Completed':   'var(--accent)',
-}
-const STATUS_PILL_CLASS: Record<string, string> = {
-  'Not Started': 'pill-ns',
-  'In Progress': 'pill-ip',
-  'On-Hold':     'pill-oh',
-  'Completed':   'pill-c',
-}
-
-function Pill({ status }: { status: string }) {
-  return <span className={`pill ${STATUS_PILL_CLASS[status] || 'pill-ns'}`}>{status}</span>
-}
+const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
 
 export default function Dashboard() {
-  const router = useRouter()
-  const [me,       setMe]       = useState<any>(null)
+  const router  = useRouter()
   const [tasks,    setTasks]    = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
+  const [users,    setUsers]    = useState<any[]>([])
   const [notifs,   setNotifs]   = useState<any[]>([])
+  const [me,       setMe]       = useState<any>(null)
   const [loading,  setLoading]  = useState(true)
 
   useEffect(() => {
@@ -40,217 +25,277 @@ export default function Dashboard() {
       if (!session) return
       const { data: u } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
       setMe({ ...u, email: session.user.email })
-      const [{ data: t }, { data: p }, { data: n }] = await Promise.all([
+      const [t, p, us, n] = await Promise.all([
         supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Projects').select('*').order('created_at'),
+        supabase.from('Users').select('id,full_name,email,role'),
         supabase.from('Notifications').select('*')
           .eq('user_id', session.user.id).eq('is_read', false)
           .order('created_at', { ascending: false }).limit(5),
       ])
-      setTasks(t || [])
-      setProjects(p || [])
-      setNotifs(n || [])
+      setTasks(t.data || [])
+      setProjects(p.data || [])
+      setUsers(us.data || [])
+      setNotifs(n.data || [])
       setLoading(false)
     }
     load()
   }, [])
 
-  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const today = new Date(); today.setHours(0,0,0,0)
+  const isManager = me?.role === 'Manager' || me?.role === 'Admin'
 
   const isMyTask = (t: any) => {
-    const myName  = (me?.full_name || '').toLowerCase().trim()
-    const myEmail = (me?.email || '').toLowerCase().trim()
-    return getAssignees(t).some((a: any) => {
-      const al = a.toLowerCase().trim()
-      return al === myName || al === myEmail
-    })
+    const o = (t.owner||'').toLowerCase()
+    const e = (me?.email||'').toLowerCase()
+    const n = (me?.full_name||'').toLowerCase()
+    return o.includes(e) || o.includes(n)
   }
 
+  // For managers/admins: show all. For team members: show only assigned.
+  const visibleTasks = isManager ? tasks : tasks.filter(isMyTask)
+
   const myTasks   = tasks.filter(isMyTask)
-  const total     = myTasks.length
-  const inProg    = myTasks.filter((t: any) => t.status === 'In Progress').length
-  const completed = myTasks.filter((t: any) => t.status === 'Completed').length
-  const overdue   = myTasks.filter((t: any) => t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today)
-  const myOverdue = overdue
-  const myDueSoon = myTasks.filter((t: any) => {
-    if (t.status === 'Completed' || !t.end_date) return false
-    const e = new Date(t.end_date); e.setHours(0, 0, 0, 0)
+  const total     = visibleTasks.length
+  const inProg    = visibleTasks.filter(t => t.status === 'In Progress').length
+  const completed = visibleTasks.filter(t => t.status === 'Completed').length
+  const overdue   = visibleTasks.filter(t => {
+    if (!t.end_date || t.status === 'Completed') return false
+    const e = new Date(t.end_date); e.setHours(0,0,0,0); return e < today
+  }).length
+
+  const myOverdue = myTasks.filter(t => {
+    if (!t.end_date || t.status === 'Completed') return false
+    const e = new Date(t.end_date); e.setHours(0,0,0,0); return e < today
+  })
+  const myDueSoon = myTasks.filter(t => {
+    if (!t.end_date || t.status === 'Completed') return false
+    const e = new Date(t.end_date); e.setHours(0,0,0,0)
     const diff = Math.round((e.getTime() - today.getTime()) / 864e5)
     return diff >= 0 && diff <= 7
   })
-  const pct = total ? Math.round(completed / total * 100) : 0
 
-  // Stat card accent colors
-  const STATS = [
-    { label: 'My Tasks',      value: total,          color: 'var(--blue)',   accent: '#1a73e8', icon: '📋' },
-    { label: 'My Overdue',    value: overdue.length,  color: 'var(--red)',    accent: '#c5221f', icon: '⚠️', onClick: overdue.length > 0 ? () => router.push('/all-tasks') : undefined },
-    { label: 'In Progress',   value: inProg,          color: 'var(--amber)',  accent: '#b45309', icon: '⏳' },
-    { label: 'Completed',     value: completed,       color: 'var(--accent)', accent: '#2e7d32', icon: '✅' },
-  ]
+  // Projects visible: managers see all, team members see only assigned projects
+  const visibleProjects = isManager
+    ? projects
+    : projects.filter(proj => {
+        if (proj.members?.includes(me?.id)) return true
+        return tasks.some(t => t.project_name === proj.name && isMyTask(t))
+      })
 
-  const TaskMini = ({ t }: { t: any }) => {
-    const over = t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today
-    return (
-      <div onClick={() => router.push(`/tasks/${t.id}`)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 'var(--r)', cursor: 'pointer', marginBottom: 4, border: '1px solid var(--row-brd)', background: 'var(--row-bg)', transition: 'all 0.12s' }}>
-        <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[t.status], flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.topic}</div>
-          <div style={{ fontSize: 11, color: over ? 'var(--red)' : 'var(--txt3)', marginTop: 1 }}>
-            {over ? '⚠ ' : ''}{t.end_date}{t.project_name ? ` · ${t.project_name}` : ''}
-          </div>
-        </div>
-        <Pill status={t.status} />
+  const completionRate = total ? Math.round(completed/total*100) : 0
+
+  // Pipeline tasks: managers see all, members see only theirs
+  const pipelineTasks = isManager ? tasks : myTasks
+
+  const StatCard = ({ icon, label, value, color, onClick }: any) => (
+    <div className="stat-card" onClick={onClick}
+      style={{ cursor: onClick ? 'pointer' : 'default' }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
+        <div style={{ padding:6, borderRadius:'var(--r)', background:'var(--bg)', display:'flex' }}>{icon}</div>
       </div>
-    )
-  }
+      <div className={`stat-value ${color||''}`} style={{ fontSize:28, marginBottom:4 }}>
+        {loading ? '—' : value}
+      </div>
+      <div className="stat-label" style={{ fontSize:12 }}>{label}</div>
+    </div>
+  )
 
   return (
-    <AppShell title="Dashboard">
+    <AppShell title={isManager ? 'Dashboard — All Teams' : 'Dashboard'}>
+      {/* Manager banner */}
+      {isManager && (
+        <div className="alert alert-info" style={{ marginBottom:14, display:'flex', alignItems:'center', gap:8 }}>
+          <Users size={14}/> Showing all tasks and projects across the team.
+          <Link href="/workload" style={{ marginLeft:'auto', fontSize:12, color:'#185FA5', textDecoration:'underline' }}>
+            View Workload →
+          </Link>
+        </div>
+      )}
 
-      {/* ── Stat Cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
-        {STATS.map(s => (
-          <div key={s.label} className="stat-card"
-            onClick={s.onClick}
-            style={{ cursor: s.onClick ? 'pointer' : 'default', borderBottom: `3px solid ${s.accent}` }}>
-            <div style={{ fontSize: 22, marginBottom: 8 }}>{s.icon}</div>
-            <div className="stat-val" style={{ color: s.color }}>
-              {loading ? '—' : s.value}
-            </div>
-            <div className="stat-lbl">{s.label}</div>
+      {/* Stats */}
+      <div className="stats-grid" style={{ gridTemplateColumns:'repeat(5,1fr)', marginBottom:16 }}>
+        <StatCard icon={<Folders size={16} color="#185FA5"/>}    label={isManager ? 'Total Tasks' : 'My Tasks'}  value={total}        color="blue" />
+        <StatCard icon={<AlertCircle size={16} color="#cc3333"/>} label="Overdue"        value={overdue}          color="red"
+          onClick={overdue > 0 ? () => router.push('/my-tasks') : undefined} />
+        <StatCard icon={<TrendingUp size={16} color="#854F0B"/>}  label="In Progress"    value={inProg}           color="amber" />
+        <StatCard icon={<CheckCircle2 size={16} color="#3B6D11"/>}label="Completed"      value={completed}        color="green" />
+        <StatCard icon={<Users size={16} color="#534AB7"/>}       label="Team Members"   value={users.length} />
+      </div>
+
+      {/* Completion bar */}
+      <div className="card" style={{ padding:'12px 16px', marginBottom:16 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+          <div style={{ fontSize:13, fontWeight:500, color:'var(--txt)' }}>
+            {isManager ? 'Team Completion' : 'My Completion'}
           </div>
-        ))}
-      </div>
-
-      {/* ── Overall Completion ── */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)' }}>Overall Completion</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)', fontFamily: 'monospace' }}>{pct}%</div>
+          <div style={{ fontSize:13, fontWeight:600, color:'#3B6D11' }}>{completionRate}%</div>
         </div>
-        <div className="prog-bar" style={{ height: 7, marginBottom: 8 }}>
-          <div className="prog-fill" style={{ width: `${pct}%` }} />
+        <div className="prog-bar" style={{ height:8 }}>
+          <div className="prog-fill" style={{ width:`${completionRate}%`, background:'#3B6D11', transition:'width 0.4s ease' }}/>
         </div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          {[
-            { label: `${completed} completed`,                                             color: 'var(--accent)' },
-            { label: `${inProg} in progress`,                                              color: 'var(--blue)'   },
-            { label: `${tasks.filter((t: any) => t.status === 'On-Hold').length} on hold`, color: 'var(--amber)'  },
-            { label: `${tasks.filter((t: any) => t.status === 'Not Started').length} not started`, color: 'var(--txt3)' },
-          ].map(x => (
-            <div key={x.label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--txt3)' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: x.color }} />
-              {x.label}
-            </div>
-          ))}
+        <div style={{ display:'flex', justifyContent:'space-between', marginTop:6, fontSize:11, color:'var(--txt3)' }}>
+          <span>{completed} completed</span>
+          <span>{visibleTasks.filter(t=>t.status==='On-Hold').length} on hold</span>
+          <span>{inProg} in progress</span>
+          <span>{visibleTasks.filter(t=>t.status==='Not Started').length} not started</span>
         </div>
       </div>
 
-      {/* ── 3-column section ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 16 }}>
+      {/* 3 col section */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, marginBottom:16 }}>
 
-        {/* Col 1: Overdue + Due Soon */}
-        <div className="card" style={{ margin: 0 }}>
+        {/* Col 1 — My overdue + due soon */}
+        <div>
           {myOverdue.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--red)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'#cc3333', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
                 My Overdue
-                <span style={{ background: 'var(--red2)', color: 'var(--red)', fontSize: 10, padding: '1px 6px', borderRadius: 10 }}>{myOverdue.length}</span>
+                <span style={{ background:'#fff0f0', color:'#cc3333', fontSize:10, padding:'1px 6px', borderRadius:10 }}>{myOverdue.length}</span>
               </div>
-              {myOverdue.slice(0, 3).map((t: any) => <TaskMini key={t.id} t={t} />)}
+              {myOverdue.slice(0,3).map(t => (
+                <div key={t.id} className="task-row overdue" onClick={() => router.push(`/tasks/${t.id}`)}>
+                  <StatusDot status={t.status}/>
+                  <div style={{ flex:1 }}>
+                    <div className="task-name">{t.topic}</div>
+                    <div className="task-meta"><span>Due {t.end_date}</span><span>{t.project_name}</span></div>
+                  </div>
+                  <StatusPill status={t.status}/>
+                </div>
+              ))}
             </div>
           )}
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            Due This Week
-            <span style={{ background: 'var(--bg)', color: 'var(--txt3)', fontSize: 10, padding: '1px 6px', borderRadius: 10, border: '1px solid var(--brd)' }}>{myDueSoon.length}</span>
+
+          <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--txt3)', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+            {isManager ? 'All Due This Week' : 'Due This Week'}
+            <span style={{ background:'var(--bg2)', color:'var(--txt3)', fontSize:10, padding:'1px 6px', borderRadius:10 }}>{myDueSoon.length}</span>
           </div>
           {myDueSoon.length === 0
-            ? <div style={{ fontSize: 12, color: 'var(--txt3)', padding: '6px 0' }}>Nothing due this week 🎉</div>
-            : myDueSoon.slice(0, 4).map((t: any) => <TaskMini key={t.id} t={t} />)
-          }
-        </div>
-
-        {/* Col 2: Projects */}
-        <div className="card" style={{ margin: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--txt3)' }}>Projects</div>
-            <Link href="/my-projects" style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none', padding: '2px 8px', background: 'var(--blue2)', borderRadius: 5 }}>View all</Link>
-          </div>
-          {projects.slice(0, 6).map((proj: any) => {
-            const pt   = tasks.filter((t: any) => t.project_name === proj.name)
-            const done = pt.filter((t: any) => t.status === 'Completed').length
-            const pc   = pt.length ? Math.round(done / pt.length * 100) : 0
-            const ovr  = pt.filter((t: any) => t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today).length
-            return (
-              <div key={proj.id} style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => router.push('/my-projects')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
-                  <div style={{ width: 9, height: 9, borderRadius: 2, background: proj.color_code || 'var(--blue)', flexShrink: 0 }} />
-                  <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--txt)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{proj.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--txt3)' }}>{done}/{pt.length}</div>
-                  {ovr > 0 && <span style={{ background: 'var(--red2)', color: 'var(--red)', fontSize: 9, padding: '1px 5px', borderRadius: 8 }}>{ovr} late</span>}
-                  <div style={{ fontSize: 11, fontWeight: 700, color: pc === 100 ? 'var(--accent)' : 'var(--txt3)', fontFamily: 'monospace' }}>{pc}%</div>
-                </div>
-                <div className="prog-bar">
-                  <div className="prog-fill" style={{ width: `${pc}%`, background: proj.color_code || 'var(--blue)' }} />
-                </div>
-              </div>
-            )
-          })}
-          {projects.length === 0 && <div style={{ fontSize: 12, color: 'var(--txt3)' }}>No projects yet.</div>}
-        </div>
-
-        {/* Col 3: Notifications */}
-        <div className="card" style={{ margin: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--txt3)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              Unread
-              {notifs.length > 0 && <span style={{ background: 'var(--blue2)', color: 'var(--blue)', fontSize: 10, padding: '1px 6px', borderRadius: 10 }}>{notifs.length}</span>}
-            </div>
-            <Link href="/notifications" style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none', padding: '2px 8px', background: 'var(--blue2)', borderRadius: 5 }}>View all</Link>
-          </div>
-          {notifs.length === 0
-            ? <div style={{ fontSize: 12, color: 'var(--txt3)' }}>No unread notifications.</div>
-            : notifs.map((n: any) => (
-                <div key={n.id} style={{ display: 'flex', gap: 9, padding: '7px 0', borderBottom: '1px solid var(--brd)', alignItems: 'flex-start' }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--blue)', marginTop: 5, flexShrink: 0 }} />
-                  <div style={{ flex: 1, fontSize: 12, color: 'var(--txt2)', lineHeight: 1.45 }}>{n.message}</div>
-                  <div style={{ fontSize: 10, color: 'var(--txt3)', whiteSpace: 'nowrap' }}>{n.created_at?.slice(0, 10)}</div>
+            ? <div style={{ fontSize:12, color:'var(--txt3)', padding:'8px 0' }}>Nothing due this week.</div>
+            : myDueSoon.slice(0,4).map(t => (
+                <div key={t.id} className="task-row" onClick={() => router.push(`/tasks/${t.id}`)}>
+                  <StatusDot status={t.status}/>
+                  <div style={{ flex:1 }}>
+                    <div className="task-name">{t.topic}</div>
+                    <div className="task-meta"><span>Due {t.end_date}</span><span>{t.project_name}</span></div>
+                  </div>
+                  <StatusPill status={t.status}/>
                 </div>
               ))
           }
         </div>
+
+        {/* Col 2 — Projects */}
+        <div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--txt3)' }}>
+              {isManager ? `Projects (${visibleProjects.length})` : 'My Projects'}
+            </div>
+            <Link href={isManager ? '/all-projects' : '/my-projects'} className="btn btn-sm" style={{ fontSize:11 }}>View all</Link>
+          </div>
+          {visibleProjects.length === 0
+            ? <div style={{ fontSize:12, color:'var(--txt3)' }}>No projects yet.</div>
+            : visibleProjects.slice(0,6).map(proj => {
+                const pt   = tasks.filter(t => t.project_name === proj.name)
+                const done = pt.filter(t => t.status === 'Completed').length
+                const over = pt.filter(t => {
+                  if (!t.end_date || t.status === 'Completed') return false
+                  const e = new Date(t.end_date); e.setHours(0,0,0,0); return e < today
+                }).length
+                const pct = pt.length ? Math.round(done/pt.length*100) : 0
+                return (
+                  <div key={proj.id} style={{ marginBottom:12, cursor:'pointer' }}
+                    onClick={() => router.push(isManager ? '/all-projects' : '/my-projects')}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                      <div className="proj-dot" style={{ background: proj.color_code||'#378ADD' }}/>
+                      <div style={{ fontSize:13, fontWeight:500, flex:1, color:'var(--txt)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{proj.name}</div>
+                      <div style={{ fontSize:11, color:'var(--txt3)', whiteSpace:'nowrap' }}>{done}/{pt.length}</div>
+                      {over > 0 && <span className="pill pill-oh" style={{ fontSize:9 }}>{over} late</span>}
+                      <span style={{ fontSize:11, fontWeight:600, color: pct===100?'#3B6D11':'var(--txt3)', whiteSpace:'nowrap' }}>{pct}%</span>
+                    </div>
+                    <div className="prog-bar">
+                      <div className="prog-fill" style={{ width:`${pct}%`, background: proj.color_code||'#378ADD', transition:'width 0.4s' }}/>
+                    </div>
+                  </div>
+                )
+              })
+          }
+        </div>
+
+        {/* Col 3 — Notifications */}
+        <div>
+          {notifs.length > 0 && (
+            <>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--txt3)' }}>
+                  Unread
+                  <span style={{ background:'#E6F1FB', color:'#185FA5', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:6 }}>{notifs.length}</span>
+                </div>
+                <Link href="/notifications" className="btn btn-sm" style={{ fontSize:11 }}>View all</Link>
+              </div>
+              <div className="card" style={{ padding:'4px 12px' }}>
+                {notifs.map(n => (
+                  <div key={n.id} className="notif-item">
+                    <div className="notif-dot" style={{ background:'#378ADD' }}/>
+                    <div className="notif-text">{n.message}</div>
+                    <div className="notif-time">{n.created_at?.slice(0,10)}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {notifs.length === 0 && (
+            <div style={{ fontSize:12, color:'var(--txt3)' }}>No unread notifications.</div>
+          )}
+        </div>
       </div>
 
-      {/* ── Pipeline Kanban ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--txt3)' }}>Pipeline</div>
-        <Link href="/tasks/create" style={{ background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 'var(--r)', padding: '5px 12px', fontSize: 12, fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }}>+ New Task</Link>
+      {/* Pipeline kanban */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+        <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--txt3)' }}>
+          {isManager ? 'Team Pipeline' : 'My Pipeline'}
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          {isManager && (
+            <Link href="/workload" className="btn btn-sm" style={{ fontSize:11 }}>
+              <Users size={12}/> Workload
+            </Link>
+          )}
+          <Link href="/tasks/create" className="btn btn-primary btn-sm">+ New Task</Link>
+        </div>
       </div>
       <div className="kanban-grid">
         {STATUSES.map(status => {
-          const group = myTasks.filter((t: any) => t.status === status)
+          const group = pipelineTasks.filter(t => t.status === status)
           return (
-            <div key={status} className="kanban-col">
-              <div className="k-header">
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[status] }} />
-                {status}
-                <span className="k-count">{group.length}</span>
+            <div key={status}>
+              <div className="col-header">
+                <div style={{ width:8, height:8, borderRadius:'50%', background:
+                  status==='Not Started'?'#aaa':status==='In Progress'?'#378ADD':
+                  status==='On-Hold'?'#EF9F27':'#639922' }}/>
+                {status}<span className="col-count">{group.length}</span>
               </div>
               {group.length === 0
-                ? <div className="k-empty">No tasks</div>
-                : group.slice(0, 4).map((t: any) => (
-                    <div key={t.id} className="k-card" onClick={() => router.push(`/tasks/${t.id}`)}>
-                      <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--txt)', marginBottom: 5 }}>{t.topic}</div>
-                      <div style={{ fontSize: 11, color: 'var(--txt3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>{t.project_name || '—'}</span>
-                        {t.type !== 'One-time' && <span className="pill pill-rc" style={{ fontSize: 9 }}>↻ {t.type}</span>}
+                ? <div className="col-empty">No tasks</div>
+                : group.slice(0,4).map(t => (
+                    <div key={t.id} className="task-row" onClick={() => router.push(`/tasks/${t.id}`)}>
+                      <StatusDot status={t.status}/>
+                      <div style={{ flex:1 }}>
+                        <div className="task-name">{t.topic}</div>
+                        <div className="task-meta">
+                          <span>{t.project_name}</span>
+                          {isManager && t.owner && <span>{t.owner}</span>}
+                          {t.type !== 'One-time' && <span>↻ {t.type}</span>}
+                        </div>
                       </div>
+                      <StatusPill status={t.status}/>
                     </div>
                   ))
               }
               {group.length > 4 && (
-                <div style={{ fontSize: 11, color: 'var(--txt3)', textAlign: 'center', padding: '4px 0' }}>+{group.length - 4} more</div>
+                <div style={{ fontSize:11, color:'var(--txt3)', textAlign:'center', marginTop:4 }}>
+                  +{group.length-4} more
+                </div>
               )}
             </div>
           )
