@@ -11,20 +11,18 @@ const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
 const DOT_CLR: Record<string,string> = {
   'Not Started':'#aaa','In Progress':'#378ADD','On-Hold':'#EF9F27','Completed':'#639922'
 }
-const SORT_OPTIONS = ['Project name','Start date','Task no'] as const
 
 export default function MyTasks() {
   const router = useRouter()
-  const [tasks,      setTasks]      = useState<any[]>([])
-  const [subtasks,   setSubtasks]   = useState<any[]>([])
-  const [me,         setMe]         = useState<any>(null)
-  const [sf,         setSf]         = useState('All')
-  const [pf,         setPf]         = useState('All')
-  const [sortBy,     setSortBy]     = useState<typeof SORT_OPTIONS[number]>('Project name')
-  const [view,       setView]       = useState<'list'|'kanban'>('list')
-  const [dragging,   setDragging]   = useState<string|null>(null)
-  const [expanded,   setExpanded]   = useState<Record<string,boolean>>({})
-  const [allExpanded,setAllExpanded]= useState(true)
+  const [tasks,       setTasks]       = useState<any[]>([])
+  const [subtasks,    setSubtasks]    = useState<any[]>([])
+  const [me,          setMe]          = useState<any>(null)
+  const [sf,          setSf]          = useState('All')
+  const [pf,          setPf]          = useState('All')
+  const [view,        setView]        = useState<'list'|'kanban'>('list')
+  const [dragging,    setDragging]    = useState<string|null>(null)
+  const [expanded,    setExpanded]    = useState<Record<string,boolean>>({})
+  const [allExpanded, setAllExpanded] = useState(true)
 
   useEffect(() => {
     const load = async () => {
@@ -63,27 +61,19 @@ export default function MyTasks() {
   let filtered = mine
   if (sf !== 'All') filtered = filtered.filter(t => t.status === sf)
   if (pf !== 'All') filtered = filtered.filter(t => t.project_name === pf)
-  const projects = [...new Set(mine.map(t => t.project_name).filter(Boolean))]
+  const projects = [...new Set(mine.map(t => t.project_name).filter(Boolean))].sort() as string[]
 
-  const sortTasks = (arr: any[]) => [...arr].sort((a, b) => {
-    if (sortBy === 'Start date') return (a.start_date||'').localeCompare(b.start_date||'')
-    if (sortBy === 'Task no')    return (a.id||'').localeCompare(b.id||'')
-    return (a.topic||'').localeCompare(b.topic||'')
-  })
-
+  // Group by project, sorted A-Z
   const grouped: Record<string, any[]> = {}
   filtered.forEach(t => {
     const p = t.project_name || 'No Project'
     grouped[p] = (grouped[p] || []).concat(t)
   })
-  let groupEntries = Object.entries(grouped)
-  if (sortBy === 'Task no')           groupEntries = groupEntries.sort((a,b) => b[1].length - a[1].length)
-  else if (sortBy === 'Project name') groupEntries = groupEntries.sort((a,b) => a[0].localeCompare(b[0]))
+  const groupEntries = Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]))
 
   const today = new Date(); today.setHours(0,0,0,0)
 
   const toggleExpand = (id: string) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
-
   const toggleAll = () => {
     const next = !allExpanded
     setAllExpanded(next)
@@ -95,8 +85,8 @@ export default function MyTasks() {
   const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('taskId', id); setDragging(id)
   }, [])
-  const handleDragEnd   = useCallback(() => setDragging(null), [])
-  const handleDragOver  = useCallback((e: React.DragEvent) => { e.preventDefault() }, [])
+  const handleDragEnd  = useCallback(() => setDragging(null), [])
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault() }, [])
 
   const handleDrop = useCallback(async (e: React.DragEvent, newStatus: string) => {
     e.preventDefault()
@@ -114,19 +104,15 @@ export default function MyTasks() {
     setDragging(null)
   }, [tasks, subtasks])
 
-  // ── Shared kanban card component ──────────────────────────────────
   const KanbanCard = ({ task }: { task: any }) => {
     const subs     = subtasks.filter(s => s.parent_task_id === task.id)
     const doneSubs = subs.filter(s => s.status === 'Completed').length
     const isOver   = task.end_date && new Date(task.end_date) < today && task.status !== 'Completed'
     return (
       <div
-        className={`kanban-card${isOver ? ' kanban-card-overdue' : ''}${dragging === task.id ? ' dragging' : ''}`}
-        draggable
-        onDragStart={e => handleDragStart(e, task.id)}
-        onDragEnd={handleDragEnd}
-        onClick={() => router.push(`/tasks/${task.id}`)}
-      >
+        className={`kanban-card${isOver?' kanban-card-overdue':''}${dragging===task.id?' dragging':''}`}
+        draggable onDragStart={e => handleDragStart(e, task.id)} onDragEnd={handleDragEnd}
+        onClick={() => router.push(`/tasks/${task.id}`)}>
         <div className="kc-title">{task.topic}</div>
         <div className="kc-chips">
           {task.project_name && <span className="kc-chip kc-chip-project">{task.project_name}</span>}
@@ -144,9 +130,9 @@ export default function MyTasks() {
     const isOpen   = expanded[task.id] ?? true
     const doneSubs = subs.filter(s => s.status === 'Completed').length
     return (
-      <div style={{ marginBottom: 6 }}>
+      <div style={{ marginBottom:6 }}>
         <div className={`task-row ${isOver?'overdue':''} ${dragging===task.id?'dragging':''}`}
-          style={{ cursor:'grab', marginBottom: subs.length && isOpen ? 2 : 0 }}
+          style={{ cursor:'grab', marginBottom: subs.length&&isOpen ? 2 : 0 }}
           draggable onDragStart={e => handleDragStart(e, task.id)} onDragEnd={handleDragEnd}>
           {subs.length > 0
             ? <ChevronRight size={13} color="var(--txt3)"
@@ -197,9 +183,6 @@ export default function MyTasks() {
           <option value="All">All Projects</option>
           {projects.map(p => <option key={p}>{p}</option>)}
         </select>
-        <select className="form-select" style={{ width:165 }} value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
-          {SORT_OPTIONS.map(s => <option key={s}>Sort: {s}</option>)}
-        </select>
         {view === 'list' && (
           <button className="btn btn-sm" onClick={toggleAll} style={{ display:'flex', alignItems:'center', gap:4 }}>
             {allExpanded ? <ChevronsDownUp size={13}/> : <ChevronsUpDown size={13}/>}
@@ -223,7 +206,7 @@ export default function MyTasks() {
             <div style={{ fontSize:12, color:'var(--txt3)' }}>{ptasks.length} task{ptasks.length!==1?'s':''}</div>
           </div>
           <div style={{ padding:'8px 16px 12px 16px' }}>
-            {sortTasks(ptasks).map(t => <TaskRow key={t.id} task={t}/>)}
+            {ptasks.map(t => <TaskRow key={t.id} task={t}/>)}
           </div>
         </div>
       ))}
