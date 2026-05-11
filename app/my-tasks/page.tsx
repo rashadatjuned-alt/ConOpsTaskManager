@@ -1,239 +1,244 @@
 'use client'
 export const dynamic = 'force-dynamic'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { StatusPill, StatusDot, TypePill } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
+import { LayoutList, Columns, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 
-const STATUS_DOT: Record<string, string> = {
-  'Not Started': 'var(--txt3)',
-  'In Progress': '#3b82f6',
-  'On-Hold':     '#f59e0b',
-  'Completed':   '#22c55e',
+const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
+const DOT_CLR: Record<string,string> = {
+  'Not Started':'#aaa','In Progress':'#378ADD','On-Hold':'#EF9F27','Completed':'#639922'
 }
-const STATUS_PILL: Record<string, { bg: string; color: string }> = {
-  'Not Started': { bg: 'var(--pill-ns-bg)', color: 'var(--pill-ns-txt)' },
-  'In Progress': { bg: 'var(--blue2)', color: 'var(--blue)' },
-  'On-Hold':     { bg: 'var(--amber2)', color: 'var(--amber)' },
-  'Completed':   { bg: 'var(--accent2)', color: 'var(--accent)' },
-}
-const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
+const SORT_OPTIONS = ['Project name','Start date','Task no'] as const
 
-// ── helpers ──────────────────────────────────────────────────────────
-function Pill({ status }: { status: string }) {
-  const s = STATUS_PILL[status] || STATUS_PILL['Not Started']
-  return (
-    <span style={{
-      background: s.bg, color: s.color,
-      fontSize: 10, padding: '2px 8px', borderRadius: 20,
-      fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0,
-    }}>{status}</span>
-  )
-}
-
-function Dot({ status }: { status: string }) {
-  return (
-    <div style={{
-      width: 7, height: 7, borderRadius: '50%',
-      background: STATUS_DOT[status] || 'var(--txt3)',
-      flexShrink: 0, marginTop: 1,
-    }} />
-  )
-}
-
-function assigneesFromRow(row: any): string[] {
-  if (Array.isArray(row.assignees) && row.assignees.length > 0) return row.assignees
-  if (row.owner) return [row.owner]
-  return []
-}
-
-// ── component ─────────────────────────────────────────────────────────
 export default function MyTasks() {
   const router = useRouter()
-  const [me,       setMe]       = useState<any>(null)
-  const [tasks,    setTasks]    = useState<any[]>([])
-  const [subtasks, setSubtasks] = useState<any[]>([])
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [loading,  setLoading]  = useState(true)
+  const [tasks,      setTasks]      = useState<any[]>([])
+  const [subtasks,   setSubtasks]   = useState<any[]>([])
+  const [me,         setMe]         = useState<any>(null)
+  const [sf,         setSf]         = useState('All')
+  const [pf,         setPf]         = useState('All')
+  const [sortBy,     setSortBy]     = useState<typeof SORT_OPTIONS[number]>('Project name')
+  const [view,       setView]       = useState<'list'|'kanban'>('list')
+  const [dragging,   setDragging]   = useState<string|null>(null)
+  const [expanded,   setExpanded]   = useState<Record<string,boolean>>({})
+  const [allExpanded,setAllExpanded]= useState(true)
 
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/auth'); return }
-
-      const { data: u } = await supabase
-        .from('Users').select('*').eq('id', session.user.id).single()
-
-      const meObj = { ...u, email: session.user.email }
-      setMe(meObj)
-
-      const [{ data: tData }, { data: sData }] = await Promise.all([
+      if (!session) return
+      const { data: u } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
+      setMe({ ...u, email: session.user.email })
+      const [t, s] = await Promise.all([
         supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Subtasks').select('*'),
       ])
-
-      const allT = tData || []
-      const allS = sData || []
-
-      const myName  = (u?.full_name || '').trim()
-      const myEmail = (session.user.email || '').trim().toLowerCase()
-
-      // exact comma-split match against assignees[] OR legacy owner field
-      const matchesMe = (row: any): boolean => {
-        const assignees: string[] = assigneesFromRow(row)
-        return assignees.some((a: any) => {
-          const al = a.toLowerCase().trim()
-          return al === myName.toLowerCase() || al === myEmail
-        })
-      }
-
-      const myTaskIds  = new Set(allT.filter(matchesMe).map((t: any) => t.id))
-      const subTaskIds = new Set(allS.filter(matchesMe).map((s: any) => s.parent_task_id))
-      const allMyIds   = new Set([...myTaskIds, ...subTaskIds])
-
-      setTasks(allT.filter((t: any) => allMyIds.has(t.id)))
-      setSubtasks(allS)
-      setLoading(false)
+      setTasks(t.data || [])
+      setSubtasks(s.data || [])
     }
     load()
   }, [])
 
-  // update subtask status inline
-  const updateSubStatus = async (subId: string | number, newStatus: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    await supabase.from('Subtasks').update({ status: newStatus }).eq('id', subId)
-    setSubtasks(prev => prev.map((s: any) => String(s.id) === String(subId) ? { ...s, status: newStatus } : s))
+  const isMyTask = (t: any) => {
+    const o = (t.owner||'').toLowerCase()
+    const e = (me?.email||'').toLowerCase()
+    const n = (me?.full_name||'').toLowerCase()
+    return o.includes(e) || (n.length > 2 && o.includes(n))
+  }
+  const isMySubtask = (s: any) => {
+    const o = (s.owner||'').toLowerCase()
+    const e = (me?.email||'').toLowerCase()
+    const n = (me?.full_name||'').toLowerCase()
+    return o.includes(e) || (n.length > 2 && o.includes(n))
   }
 
-  const toggle = (id: string) =>
-    setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  const myTaskIds = new Set(tasks.filter(isMyTask).map(t => t.id))
+  const taskIdsWithMySubtasks = new Set(subtasks.filter(isMySubtask).map(s => s.parent_task_id))
+  const allMyTaskIds = new Set([...myTaskIds, ...taskIdsWithMySubtasks])
+  const mine = tasks.filter(t => allMyTaskIds.has(t.id))
 
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const isOverdue = (t: any) =>
-    t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today
+  let filtered = mine
+  if (sf !== 'All') filtered = filtered.filter(t => t.status === sf)
+  if (pf !== 'All') filtered = filtered.filter(t => t.project_name === pf)
+  const projects = [...new Set(mine.map(t => t.project_name).filter(Boolean))]
 
-  if (loading) return (
-    <AppShell title="My Tasks">
-      <div style={styles.loading}>Loading your tasks...</div>
-    </AppShell>
-  )
+  const sortTasks = (arr: any[]) => [...arr].sort((a, b) => {
+    if (sortBy === 'Start date') return (a.start_date||'').localeCompare(b.start_date||'')
+    if (sortBy === 'Task no')    return (a.id||'').localeCompare(b.id||'')
+    return (a.topic||'').localeCompare(b.topic||'')
+  })
+
+  const grouped: Record<string, any[]> = {}
+  filtered.forEach(t => {
+    const p = t.project_name || 'No Project'
+    grouped[p] = (grouped[p] || []).concat(t)
+  })
+  let groupEntries = Object.entries(grouped)
+  if (sortBy === 'Task no')           groupEntries = groupEntries.sort((a,b) => b[1].length - a[1].length)
+  else if (sortBy === 'Project name') groupEntries = groupEntries.sort((a,b) => a[0].localeCompare(b[0]))
+
+  const today = new Date(); today.setHours(0,0,0,0)
+
+  const toggleExpand = (id: string) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+
+  const toggleAll = () => {
+    const next = !allExpanded
+    setAllExpanded(next)
+    const s: Record<string,boolean> = {}
+    filtered.forEach(t => { s[t.id] = next })
+    setExpanded(s)
+  }
+
+  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('taskId', id); setDragging(id)
+  }, [])
+  const handleDragEnd   = useCallback(() => setDragging(null), [])
+  const handleDragOver  = useCallback((e: React.DragEvent) => { e.preventDefault() }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault()
+    const id = e.dataTransfer.getData('taskId')
+    const task = tasks.find(t => t.id === id)
+    if (!task || task.status === newStatus) { setDragging(null); return }
+    if (newStatus === 'Completed') {
+      const subs = subtasks.filter(s => s.parent_task_id === id)
+      if (subs.some(s => s.status !== 'Completed')) {
+        alert('All subtasks must be completed first.'); setDragging(null); return
+      }
+    }
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t))
+    await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
+    setDragging(null)
+  }, [tasks, subtasks])
+
+  // ── Shared kanban card component ──────────────────────────────────
+  const KanbanCard = ({ task }: { task: any }) => {
+    const subs     = subtasks.filter(s => s.parent_task_id === task.id)
+    const doneSubs = subs.filter(s => s.status === 'Completed').length
+    const isOver   = task.end_date && new Date(task.end_date) < today && task.status !== 'Completed'
+    return (
+      <div
+        className={`kanban-card${isOver ? ' kanban-card-overdue' : ''}${dragging === task.id ? ' dragging' : ''}`}
+        draggable
+        onDragStart={e => handleDragStart(e, task.id)}
+        onDragEnd={handleDragEnd}
+        onClick={() => router.push(`/tasks/${task.id}`)}
+      >
+        <div className="kc-title">{task.topic}</div>
+        <div className="kc-chips">
+          {task.project_name && <span className="kc-chip kc-chip-project">{task.project_name}</span>}
+          {task.type && task.type !== 'One-time' && <span className="kc-chip kc-chip-type">↻ {task.type}</span>}
+          {subs.length > 0 && <span className="kc-chip kc-chip-sub">{doneSubs}/{subs.length} done</span>}
+        </div>
+        {task.owner && <div className="kc-owner">{task.owner}</div>}
+      </div>
+    )
+  }
+
+  const TaskRow = ({ task }: { task: any }) => {
+    const isOver   = task.end_date && new Date(task.end_date) < today && task.status !== 'Completed'
+    const subs     = subtasks.filter(s => s.parent_task_id === task.id)
+    const isOpen   = expanded[task.id] ?? true
+    const doneSubs = subs.filter(s => s.status === 'Completed').length
+    return (
+      <div style={{ marginBottom: 6 }}>
+        <div className={`task-row ${isOver?'overdue':''} ${dragging===task.id?'dragging':''}`}
+          style={{ cursor:'grab', marginBottom: subs.length && isOpen ? 2 : 0 }}
+          draggable onDragStart={e => handleDragStart(e, task.id)} onDragEnd={handleDragEnd}>
+          {subs.length > 0
+            ? <ChevronRight size={13} color="var(--txt3)"
+                style={{ transform:isOpen?'rotate(90deg)':'', transition:'transform 0.2s', cursor:'pointer', flexShrink:0 }}
+                onClick={e => { e.stopPropagation(); toggleExpand(task.id) }}/>
+            : <div style={{ width:13, flexShrink:0 }}/>
+          }
+          <StatusDot status={task.status}/>
+          <div style={{ flex:1 }} onClick={() => router.push(`/tasks/${task.id}`)}>
+            <div className="task-name">{task.topic}</div>
+            <div className="task-meta">
+              {task.end_date && <span>{isOver?'⚠ ':''}{task.end_date}</span>}
+              {task.project_name && <span>{task.project_name}</span>}
+              {task.owner && <span>{task.owner}</span>}
+            </div>
+          </div>
+          {subs.length > 0 && <span style={{ fontSize:10, color:'var(--txt3)', whiteSpace:'nowrap' }}>{doneSubs}/{subs.length}</span>}
+          <StatusPill status={task.status}/>
+          <TypePill type={task.type}/>
+        </div>
+        {subs.length > 0 && isOpen && (
+          <div style={{ paddingLeft:28, marginBottom:4 }}>
+            {subs.map(s => (
+              <div key={s.id} className="sub-row"
+                style={{ border:'0.5px solid var(--brd)', borderRadius:'var(--r)', marginBottom:3, background:'var(--bg)', cursor:'pointer' }}
+                onClick={() => router.push(`/tasks/${task.id}`)}>
+                <span style={{ color:'var(--txt3)', fontSize:12 }}>↳</span>
+                <span style={{ flex:1, fontSize:13, color:'var(--txt)' }}>{s.topic}</span>
+                {s.owner && <span style={{ fontSize:11, color:'var(--txt3)' }}>{s.owner}</span>}
+                <span style={{ fontSize:11, color:'var(--txt3)' }}>{s.end_date}</span>
+                <StatusPill status={s.status}/>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <AppShell title="My Tasks">
-      {tasks.length === 0 ? (
-        <div style={styles.empty}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>☑</div>
-          <div>No tasks assigned to you.</div>
+      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
+        <select className="form-select" style={{ width:150 }} value={sf} onChange={e => setSf(e.target.value)}>
+          <option value="All">All Status</option>
+          {STATUSES.map(s => <option key={s}>{s}</option>)}
+        </select>
+        <select className="form-select" style={{ width:180 }} value={pf} onChange={e => setPf(e.target.value)}>
+          <option value="All">All Projects</option>
+          {projects.map(p => <option key={p}>{p}</option>)}
+        </select>
+        <select className="form-select" style={{ width:165 }} value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+          {SORT_OPTIONS.map(s => <option key={s}>Sort: {s}</option>)}
+        </select>
+        {view === 'list' && (
+          <button className="btn btn-sm" onClick={toggleAll} style={{ display:'flex', alignItems:'center', gap:4 }}>
+            {allExpanded ? <ChevronsDownUp size={13}/> : <ChevronsUpDown size={13}/>}
+            {allExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
+        )}
+        <div style={{ marginLeft:'auto', display:'flex', gap:4 }}>
+          <button className={view==='list'?'btn btn-primary btn-sm':'btn btn-sm'} onClick={() => setView('list')} title="List view"><LayoutList size={15}/></button>
+          <button className={view==='kanban'?'btn btn-primary btn-sm':'btn btn-sm'} onClick={() => setView('kanban')} title="Kanban view"><Columns size={15}/></button>
         </div>
-      ) : (
-        <div style={styles.tableWrap}>
-          {/* Header */}
-          <div style={{ ...styles.headerRow }}>
-            <div style={{ ...styles.col, flex: 3 }}>Task Title</div>
-            <div style={{ ...styles.col, flex: 2 }}>Project</div>
-            <div style={{ ...styles.col, flex: 1.2 }}>Start Date</div>
-            <div style={{ ...styles.col, flex: 1.2 }}>End Date</div>
-            <div style={{ ...styles.col, flex: 2 }}>Assignee</div>
-            <div style={{ ...styles.col, flex: 1.5 }}>Status</div>
+        <div style={{ fontSize:12, color:'var(--txt3)' }}>{filtered.length} task{filtered.length!==1?'s':''}</div>
+      </div>
+
+      {filtered.length === 0 && <div className="empty-state"><div style={{ fontSize:32 }}>☑</div><div style={{ marginTop:8 }}>No tasks assigned to you.</div></div>}
+
+      {view === 'list' && filtered.length > 0 && groupEntries.map(([projName, ptasks]) => (
+        <div key={projName} className="card" style={{ padding:0, overflow:'hidden', marginBottom:12 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', background:'var(--bg2)', borderBottom:'0.5px solid var(--brd)' }}>
+            <div className="proj-dot" style={{ background:'#378ADD' }}/>
+            <div style={{ fontSize:14, fontWeight:500, flex:1, color:'var(--txt)' }}>{projName}</div>
+            <div style={{ fontSize:12, color:'var(--txt3)' }}>{ptasks.length} task{ptasks.length!==1?'s':''}</div>
           </div>
+          <div style={{ padding:'8px 16px 12px 16px' }}>
+            {sortTasks(ptasks).map(t => <TaskRow key={t.id} task={t}/>)}
+          </div>
+        </div>
+      ))}
 
-          {tasks.map(task => {
-            const subs  = subtasks.filter((s: any) => String(s.parent_task_id) === String(task.id))
-            const open  = expanded[task.id]
-            const over  = isOverdue(task)
-            const assignees = assigneesFromRow(task)
-
+      {view === 'kanban' && (
+        <div className="kanban-grid">
+          {STATUSES.map(status => {
+            const group = filtered.filter(t => t.status === status)
             return (
-              <div key={task.id}>
-                {/* Main task row */}
-                <div
-                  style={{
-                    ...styles.taskRow,
-                    ...(over ? styles.overdueRow : {}),
-                  }}
-                  onClick={() => router.push(`/tasks/${task.id}`)}
-                >
-                  {/* expand chevron */}
-                  <div
-                    style={styles.chevronWrap}
-                    onClick={e => { e.stopPropagation(); if (subs.length) toggle(task.id) }}
-                  >
-                    {subs.length > 0 && (
-                      <svg
-                        width="10" height="10" viewBox="0 0 10 10" fill="none"
-                        style={{
-                          transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
-                          transition: 'transform 0.18s',
-                        }}
-                      >
-                        <path d="M3 2l4 3-4 3" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    )}
-                  </div>
-
-                  <Dot status={task.status} />
-
-                  <div style={{ ...styles.cell, flex: 3 }}>
-                    <span style={styles.taskName}>{task.topic}</span>
-                    {subs.length > 0 && (
-                      <span style={styles.subCount}>{subs.length} subtask{subs.length !== 1 ? 's' : ''}</span>
-                    )}
-                  </div>
-                  <div style={{ ...styles.cell, flex: 2, color: 'var(--txt3)' }}>{task.project_name || '—'}</div>
-                  <div style={{ ...styles.cell, flex: 1.2, color: 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>{task.start_date || '—'}</div>
-                  <div style={{ ...styles.cell, flex: 1.2, color: over ? '#f87171' : 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>
-                    {over && <span style={{ marginRight: 3 }}>⚠</span>}
-                    {task.end_date || '—'}
-                  </div>
-                  <div style={{ ...styles.cell, flex: 2, color: 'var(--txt3)', fontSize: 11 }}>
-                    {assignees.join(', ') || '—'}
-                  </div>
-                  <div style={{ ...styles.cell, flex: 1.5 }}>
-                    <Pill status={task.status} />
-                  </div>
+              <div key={status} className="kanban-col" onDragOver={handleDragOver} onDrop={e => handleDrop(e, status)}>
+                <div className="col-header">
+                  <div style={{ width:8, height:8, borderRadius:'50%', background: DOT_CLR[status] }}/>
+                  {status}<span className="col-count">{group.length}</span>
                 </div>
-
-                {/* Subtask rows */}
-                {subs.length > 0 && open && (
-                  <div style={styles.subtaskBlock}>
-                    {/* subtask header */}
-                    <div style={styles.subHeader}>
-                      <div style={{ width: 24 }} />
-                      <div style={{ flex: 3, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Subtask</div>
-                      <div style={{ flex: 1.2, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Start</div>
-                      <div style={{ flex: 1.2, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>End</div>
-                      <div style={{ flex: 2, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assignee</div>
-                      <div style={{ flex: 1.5, fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Status</div>
-                    </div>
-                    {subs.map(sub => {
-                      const subAssignees = assigneesFromRow(sub)
-                      return (
-                        <div
-                          key={sub.id}
-                          style={styles.subRow}
-                          onClick={() => router.push(`/tasks/${task.id}`)}
-                        >
-                          <div style={{ width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <span style={{ color: 'var(--txt3)', fontSize: 11 }}>↳</span>
-                          </div>
-                          <div style={{ flex: 3, fontSize: 12, color: 'var(--txt2)' }}>{sub.topic}</div>
-                          <div style={{ flex: 1.2, fontSize: 11, color: 'var(--txt3)', fontFamily: 'monospace' }}>{sub.start_date || '—'}</div>
-                          <div style={{ flex: 1.2, fontSize: 11, color: 'var(--txt3)', fontFamily: 'monospace' }}>{sub.end_date || '—'}</div>
-                          <div style={{ flex: 2, fontSize: 11, color: 'var(--txt3)' }}>{subAssignees.join(', ') || '—'}</div>
-                          <div style={{ flex: 1.5 }} onClick={e => e.stopPropagation()}>
-                            <select
-                              value={sub.status}
-                              onChange={e => updateSubStatus(sub.id, e.target.value, e as any)}
-                              style={styles.statusSelect}
-                            >
-                              {STATUSES.map((s: any) => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+                {group.length === 0 ? <div className="col-empty">Drop tasks here</div> : group.map(t => <KanbanCard key={t.id} task={t}/>)}
               </div>
             )
           })}
@@ -241,78 +246,4 @@ export default function MyTasks() {
       )}
     </AppShell>
   )
-}
-
-// ── styles ────────────────────────────────────────────────────────────
-const styles: Record<string, React.CSSProperties> = {
-  loading: {
-    padding: 40, color: 'var(--txt3)', textAlign: 'center', fontSize: 13,
-  },
-  empty: {
-    textAlign: 'center', padding: '4rem 0', color: 'var(--txt3)', fontSize: 13,
-  },
-  tableWrap: {
-    background: 'var(--card-bg)',
-    border: '1px solid var(--card-brd)',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  headerRow: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '10px 16px',
-    background: 'var(--input-bg)',
-    borderBottom: '1px solid var(--brd)',
-  },
-  col: {
-    fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const,
-    letterSpacing: '0.07em', color: 'var(--txt3)',
-  },
-  taskRow: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '11px 16px',
-    borderBottom: '1px solid var(--brd)',
-    cursor: 'pointer',
-    transition: 'background 0.14s',
-  } as React.CSSProperties,
-  overdueRow: {
-    background: 'rgba(239,68,68,0.05)',
-    borderLeft: '2px solid rgba(239,68,68,0.4)',
-  },
-  chevronWrap: {
-    width: 16, display: 'flex', alignItems: 'center',
-    justifyContent: 'center', flexShrink: 0, cursor: 'pointer',
-  },
-  cell: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    fontSize: 12, color: 'var(--txt)', overflow: 'hidden',
-  },
-  taskName: {
-    fontWeight: 500, fontSize: 13, color: 'var(--txt)',
-    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-  },
-  subCount: {
-    fontSize: 10, color: 'var(--txt3)', background: 'var(--bg3)',
-    padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0,
-  },
-  subtaskBlock: {
-    background: 'var(--bg)',
-    borderBottom: '1px solid var(--brd)',
-  },
-  subHeader: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '6px 16px 4px 16px',
-  },
-  subRow: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '8px 16px',
-    borderTop: '1px solid rgba(255,255,255,0.03)',
-    cursor: 'pointer',
-    transition: 'background 0.12s',
-  },
-  statusSelect: {
-    background: '#1f2937', color: 'var(--txt3)',
-    border: '1px solid var(--input-brd)',
-    borderRadius: 6, padding: '3px 6px', fontSize: 11,
-    cursor: 'pointer', fontFamily: 'inherit', width: '100%',
-  },
 }
