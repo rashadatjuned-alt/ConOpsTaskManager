@@ -3,39 +3,182 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { useRouter, useParams } from 'next/navigation'
+import { StatusPill, StatusDot } from '@/components/ui/StatusPill'
+import { useRouter } from 'next/navigation'
+import { ChevronRight, Trash2, Plus, Info, X, Users, Calendar, Clock, Search, Filter } from 'lucide-react'
+import Link from 'next/link'
 
-const COLORS = [
-  '#3b82f6','#8b5cf6','#f59e0b','#22c55e',
-  '#ef4444','#06b6d4','#f97316','#ec4899',
-  '#6366f1','#14b8a6',
-]
+// ─── Project Info Modal ───────────────────────────────────────────────────────
+function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
+  proj: any; tasks: any[]; allUsers: any[]; onClose: () => void
+}) {
+  const projTasks  = tasks.filter(t => t.project_name === proj.name)
+  const done       = projTasks.filter(t => t.status === 'Completed').length
+  const pct        = projTasks.length ? Math.round(done / projTasks.length * 100) : 0
 
-export default function EditProject() {
+  // Members: resolve from proj.members array of user IDs
+  const members = (proj.members || [])
+    .map((id: string) => allUsers.find((u: any) => u.id === id))
+    .filter(Boolean)
+
+  // Duration
+  const startDate = proj.start_date || projTasks.map((t:any)=>t.start_date).filter(Boolean).sort()[0]
+  const endDate   = proj.end_date   || projTasks.map((t:any)=>t.end_date).filter(Boolean).sort().reverse()[0]
+  let duration = '—'
+  if (startDate && endDate) {
+    const days = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 864e5)
+    if (days < 0)       duration = '—'
+    else if (days < 7)  duration = `${days} day${days!==1?'s':''}`
+    else if (days < 30) duration = `${Math.round(days/7)} week${Math.round(days/7)!==1?'s':''}`
+    else if (days < 365)duration = `${Math.round(days/30)} month${Math.round(days/30)!==1?'s':''}`
+    else                duration = `${(days/365).toFixed(1)} years`
+  }
+
+  const AVATAR_BG = ['#E6F1FB','#EAF3DE','#EEEDFE','#FAEEDA','#FAECE7','#E1F5EE']
+  const AVATAR_CL = ['#0C447C','#27500A','#3C3489','#633806','#712B13','#085041']
+  const ini = (name: string) => {
+    const p = (name||'?').trim().split(' ')
+    return p.length >= 2 ? (p[0][0]+p[p.length-1][0]).toUpperCase() : name.slice(0,2).toUpperCase()
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background:'var(--bg)', borderRadius:'var(--rl)', width:480,
+        maxHeight:'85vh', overflow:'auto', boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
+
+        {/* Header strip */}
+        <div style={{ background: proj.color_code||'#378ADD', borderRadius:'var(--rl) var(--rl) 0 0',
+          padding:'20px 24px 16px', position:'relative' }}>
+          <button onClick={onClose}
+            style={{ position:'absolute', top:14, right:14, background:'rgba(255,255,255,0.2)',
+              border:'none', borderRadius:'50%', width:28, height:28, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', color:'#fff' }}>
+            <X size={14}/>
+          </button>
+          <div style={{ fontSize:18, fontWeight:600, color:'#fff', marginBottom:4 }}>{proj.name}</div>
+          <div style={{ fontSize:12, color:'rgba(255,255,255,0.8)' }}>
+            {projTasks.length} task{projTasks.length!==1?'s':''} · {pct}% complete
+          </div>
+          {/* Mini progress bar */}
+          <div style={{ height:4, background:'rgba(255,255,255,0.3)', borderRadius:2,
+            marginTop:10, overflow:'hidden' }}>
+            <div style={{ width:`${pct}%`, height:'100%', background:'#fff', borderRadius:2 }}/>
+          </div>
+        </div>
+
+        <div style={{ padding:'20px 24px' }}>
+
+          {/* Description */}
+          {proj.description && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase',
+                letterSpacing:'0.06em', color:'var(--txt3)', marginBottom:6 }}>Description</div>
+              <div style={{ fontSize:13, color:'var(--txt2)', lineHeight:1.6 }}>{proj.description}</div>
+            </div>
+          )}
+
+          {/* Dates + Duration row */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:20 }}>
+            {[
+              { icon:<Calendar size={14}/>, label:'Start Date', val: startDate||'—' },
+              { icon:<Calendar size={14}/>, label:'End Date',   val: endDate||'—' },
+              { icon:<Clock size={14}/>,    label:'Duration',   val: duration },
+            ].map(({ icon, label, val }) => (
+              <div key={label} style={{ background:'var(--bg2)', borderRadius:'var(--r)',
+                padding:'10px 12px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:5,
+                  color:'var(--txt3)', fontSize:11, marginBottom:5 }}>
+                  {icon}{label}
+                </div>
+                <div style={{ fontSize:13, fontWeight:500, color:'var(--txt)' }}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Task status breakdown */}
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase',
+              letterSpacing:'0.06em', color:'var(--txt3)', marginBottom:10 }}>Task Breakdown</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+              {[
+                { label:'Not Started', bg:'#F1EFE8', color:'#5F5E5A' },
+                { label:'In Progress', bg:'#E6F1FB', color:'#185FA5' },
+                { label:'On-Hold',     bg:'#FAEEDA', color:'#854F0B' },
+                { label:'Completed',   bg:'#EAF3DE', color:'#3B6D11' },
+              ].map(({ label, bg, color }) => (
+                <div key={label} style={{ background:bg, borderRadius:'var(--r)',
+                  padding:'8px 10px', textAlign:'center' }}>
+                  <div style={{ fontSize:18, fontWeight:600, color }}>{projTasks.filter(t=>t.status===label).length}</div>
+                  <div style={{ fontSize:10, color, marginTop:2 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Team members */}
+          <div>
+            <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase',
+              letterSpacing:'0.06em', color:'var(--txt3)', marginBottom:10,
+              display:'flex', alignItems:'center', gap:6 }}>
+              <Users size={12}/> Team Members ({members.length})
+            </div>
+            {members.length === 0
+              ? <div style={{ fontSize:12, color:'var(--txt3)' }}>No members assigned to this project.</div>
+              : (
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {members.map((u: any, idx: number) => {
+                    const name = u.full_name || u.email
+                    const bg   = AVATAR_BG[idx % AVATAR_BG.length]
+                    const cl   = AVATAR_CL[idx % AVATAR_CL.length]
+                    const memberTasks = projTasks.filter(t =>
+                      (t.owner||'').toLowerCase().includes(name.toLowerCase())
+                    )
+                    return (
+                      <div key={u.id} style={{ display:'flex', alignItems:'center', gap:10,
+                        padding:'8px 10px', background:'var(--bg2)', borderRadius:'var(--r)' }}>
+                        <div style={{ width:32, height:32, borderRadius:'50%',
+                          background:bg, color:cl, display:'flex', alignItems:'center',
+                          justifyContent:'center', fontSize:12, fontWeight:600, flexShrink:0 }}>
+                          {ini(name)}
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:500, color:'var(--txt)' }}>{name}</div>
+                          <div style={{ fontSize:11, color:'var(--txt3)' }}>{u.role}</div>
+                        </div>
+                        <div style={{ fontSize:11, color:'var(--txt3)', textAlign:'right' }}>
+                          <div style={{ fontWeight:500, color:'var(--txt)' }}>{memberTasks.length}</div>
+                          <div>tasks</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+export default function AllProjects() {
   const router = useRouter()
-  const { id } = useParams<{ id: string }>()
-
-  const [project,     setProject]     = useState<any>(null)
-  const [allUsers,    setAllUsers]    = useState<any[]>([])
-  const [tasks,       setTasks]       = useState<any[]>([])
-  const [subtasks,    setSubtasks]    = useState<any[]>([])
-  const [myRole,      setMyRole]      = useState('')
-  const [loading,     setLoading]     = useState(true)
-  const [saving,      setSaving]      = useState(false)
-  const [error,       setError]       = useState('')
-  const [success,     setSuccess]     = useState('')
-
-  // Edit fields
-  const [name,        setName]        = useState('')
-  const [desc,        setDesc]        = useState('')
-  const [color,       setColor]       = useState('#3b82f6')
-  const [members,     setMembers]     = useState<string[]>([])   // user ids
-
-  // Impact preview
-  const [showImpact,  setShowImpact]  = useState(false)
-  const [removedUsers,setRemovedUsers]= useState<any[]>([])      // users being removed
-  const [impactTasks, setImpactTasks] = useState<any[]>([])      // tasks affected
-  const [impactSubs,  setImpactSubs]  = useState<any[]>([])      // subtasks affected
+  const [projects,  setProjects]  = useState<any[]>([])
+  const [tasks,     setTasks]     = useState<any[]>([])
+  const [subtasks,  setSubtasks]  = useState<any[]>([])
+  const [allUsers,  setAllUsers]  = useState<any[]>([])
+  const [myRole,    setMyRole]    = useState('')
+  const [collapsed, setCollapsed] = useState<Record<string,boolean>>({})
+  const [collTask,  setCollTask]  = useState<Record<string,boolean>>({})
+  const [infoProj,  setInfoProj]  = useState<any|null>(null)
+  
+  // Filter States
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('All')
 
   useEffect(() => {
     const load = async () => {
@@ -43,324 +186,256 @@ export default function EditProject() {
       if (!session) return
       const { data: u } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
       setMyRole(u?.role || '')
-
-      const [{ data: proj }, { data: users }, { data: t }, { data: s }] = await Promise.all([
-        supabase.from('Projects').select('*').eq('id', id).single(),
-        supabase.from('Users').select('id,full_name,email,role').neq('role', 'Admin').order('full_name'),
-        supabase.from('Tasks').select('*'),
+      const [p, t, s, us] = await Promise.all([
+        supabase.from('Projects').select('*').order('created_at'),
+        supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Subtasks').select('*'),
+        supabase.from('Users').select('id,full_name,email,role'),
       ])
-
-      if (!proj) { setLoading(false); return }
-
-      setProject(proj)
-      setName(proj.name || '')
-      setDesc(proj.description || '')
-      setColor(proj.color_code || '#3b82f6')
-      setMembers(proj.members || [])
-      setAllUsers(users || [])
-
-      // Only tasks for this project
-      const projTasks = (t || []).filter((tk: any) => tk.project_name === proj.name)
-      setTasks(projTasks)
-      const projTaskIds = projTasks.map((tk: any) => tk.id)
-      setSubtasks((s || []).filter((sub: any) => projTaskIds.includes(sub.parent_task_id)))
-
-      setLoading(false)
+      setProjects(p.data || [])
+      setTasks(t.data || [])
+      setSubtasks(s.data || [])
+      setAllUsers(us.data || [])
     }
     load()
-  }, [id])
+  }, [])
 
-  const toggleMember = (uid: string) => {
-    setMembers(prev => prev.includes(uid) ? prev.filter(m => m !== uid) : [...prev, uid])
-  }
-
-  // Calculate impact whenever members change
-  useEffect(() => {
-    if (!project) return
-    const originalMembers: string[] = project.members || []
-    const removed = originalMembers.filter((uid: string) => !members.includes(uid))
-    const removedUserObjs = allUsers.filter((u: any) => removed.includes(u.id))
-    const removedNames = removedUserObjs.map((u: any) => u.full_name || u.email)
-
-    // Find tasks assigned to removed users
-    const affectedTasks = tasks.filter((t: any) => {
-      const assignees: string[] = Array.isArray(t.assignees) ? t.assignees : (t.owner ? [t.owner] : [])
-      return assignees.some((a: string) => removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase()))
-    })
-
-    // Find subtasks assigned to removed users
-    const affectedSubs = subtasks.filter((s: any) => {
-      const assignees: string[] = Array.isArray(s.assignees) ? s.assignees : (s.owner ? [s.owner] : [])
-      return assignees.some((a: string) => removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase()))
-    })
-
-    setRemovedUsers(removedUserObjs)
-    setImpactTasks(affectedTasks)
-    setImpactSubs(affectedSubs)
-  }, [members, project, tasks, subtasks, allUsers])
-
-  const handleSave = async () => {
-    if (!name.trim()) { setError('Project name is required.'); return }
-    setError('')
-
-    // Show impact warning if removing assignees with tasks
-    if (removedUsers.length > 0 && (impactTasks.length > 0 || impactSubs.length > 0) && !showImpact) {
-      setShowImpact(true)
-      return
-    }
-
-    setSaving(true)
-    try {
-      const oldName = project.name
-
-      // 1. Update project
-      await supabase.from('Projects').update({
-        name: name.trim(),
-        description: desc.trim(),
-        color_code: color,
-        members,
-      }).eq('id', id)
-
-      // 2. If name changed, update all tasks referencing this project
-      if (name.trim() !== oldName) {
-        await supabase.from('Tasks')
-          .update({ project_name: name.trim() })
-          .eq('project_name', oldName)
-      }
-
-      // 3. Remove unassigned users from tasks
-      if (removedUsers.length > 0) {
-        const removedNames = removedUsers.map((u: any) => u.full_name || u.email)
-
-        for (const task of impactTasks) {
-          const currentAssignees: string[] = Array.isArray(task.assignees)
-            ? task.assignees
-            : (task.owner ? task.owner.split(',').map((s: string) => s.trim()) : [])
-
-          const newAssignees = currentAssignees.filter(
-            (a: string) => !removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase())
-          )
-          await supabase.from('Tasks').update({
-            assignees: newAssignees,
-            owner: newAssignees.join(', '),
-          }).eq('id', task.id)
-        }
-
-        for (const sub of impactSubs) {
-          const currentAssignees: string[] = Array.isArray(sub.assignees)
-            ? sub.assignees
-            : (sub.owner ? [sub.owner] : [])
-
-          const newAssignees = currentAssignees.filter(
-            (a: string) => !removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase())
-          )
-          await supabase.from('Subtasks').update({
-            assignees: newAssignees,
-            owner: newAssignees.join(', '),
-          }).eq('id', sub.id)
-        }
-      }
-
-      setSuccess('✅ Project updated successfully!')
-      setShowImpact(false)
-      setTimeout(() => router.push('/all-projects'), 1500)
-    } catch (e: any) {
-      setError(e.message)
-    }
-    setSaving(false)
-  }
+  const canDelete = myRole === 'Admin' || myRole === 'Manager'
 
   if (myRole && myRole === 'Team Member') return (
-    <AppShell title="Edit Project">
-      <div style={{ color: 'var(--red)', padding: 20 }}>Access denied — Managers and Admins only.</div>
+    <AppShell title="All Projects">
+      <div className="alert alert-error">Access denied — Managers and Admins only.</div>
     </AppShell>
   )
 
-  if (loading) return <AppShell title="Edit Project"><div style={{ padding: 40, color: 'var(--txt3)', textAlign: 'center' }}>Loading...</div></AppShell>
-  if (!project) return <AppShell title="Edit Project"><div style={{ color: 'var(--red)', padding: 20 }}>Project not found.</div></AppShell>
+  const deleteProject = async (proj: any) => {
+    if (!confirm(`Delete project "${proj.name}"? All tasks will remain but lose their project.`)) return
+    await supabase.from('Projects').delete().eq('id', proj.id)
+    setProjects(prev => prev.filter(p => p.id !== proj.id))
+  }
 
-  const hasImpact = removedUsers.length > 0 && (impactTasks.length > 0 || impactSubs.length > 0)
+  const deleteTask = async (taskId: string, topic: string) => {
+    if (!confirm(`Delete task "${topic}"?`)) return
+    await supabase.from('Subtasks').delete().eq('parent_task_id', taskId)
+    await supabase.from('Tasks').delete().eq('id', taskId)
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+    setSubtasks(prev => prev.filter(s => s.parent_task_id !== taskId))
+  }
+
+  const deleteSubtask = async (subId: string, topic: string) => {
+    if (!confirm(`Delete subtask "${topic}"?`)) return
+    await supabase.from('Subtasks').delete().eq('id', subId)
+    setSubtasks(prev => prev.filter(s => s.id !== subId))
+  }
+
+  // Apply Filters
+  const filteredProjects = projects.filter(proj => {
+    const matchesSearch = proj.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (proj.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch;
+  });
 
   return (
-    <AppShell title={`Edit: ${project.name}`}>
-      <div style={{ maxWidth: 720 }}>
+    <AppShell title="All Projects">
+      {/* Info modal */}
+      {infoProj && (
+        <ProjectInfoModal
+          proj={infoProj} tasks={tasks} allUsers={allUsers}
+          onClose={() => setInfoProj(null)}
+        />
+      )}
 
-        {error   && <div style={S.alertErr}>{error}</div>}
-        {success && <div style={S.alertOk}>{success}</div>}
-
-        {/* Impact warning banner */}
-        {hasImpact && !showImpact && (
-          <div style={S.alertWarn}>
-            ⚠️ Removing <strong>{removedUsers.map((u: any) => u.full_name).join(', ')}</strong> will affect{' '}
-            {impactTasks.length > 0 && <strong>{impactTasks.length} task{impactTasks.length !== 1 ? 's' : ''}</strong>}
-            {impactTasks.length > 0 && impactSubs.length > 0 && ' and '}
-            {impactSubs.length > 0 && <strong>{impactSubs.length} subtask{impactSubs.length !== 1 ? 's' : ''}</strong>}
-            {' '}in this project. They will be unassigned automatically.
+      {/* Top Bar: Filters & Actions */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 300 }}>
+          <div style={{ position: 'relative', flex: 1, maxWidth: 300 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--txt3)' }} />
+            <input 
+              type="text" 
+              placeholder="Search projects..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px 8px 30px', borderRadius: 'var(--r)', border: '1px solid var(--brd)', background: 'var(--bg)', fontSize: 13 }}
+            />
           </div>
-        )}
-
-        {/* Project Details */}
-        <div style={S.card}>
-          <div style={S.cardTitle}>Project Details</div>
-
-          <div style={S.fg}>
-            <label style={S.lbl}>Project Name *</label>
-            <input style={S.input} value={name} onChange={e => setName(e.target.value)} placeholder="Project name" />
-          </div>
-
-          <div style={S.fg}>
-            <label style={S.lbl}>Description</label>
-            <textarea style={S.textarea} value={desc} onChange={e => setDesc(e.target.value)} placeholder="What is this project about?" />
-          </div>
-
-          <div style={S.fg}>
-            <label style={S.lbl}>Color Tag</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-              {COLORS.map(c => (
-                <button key={c} type="button" onClick={() => setColor(c)} style={{
-                  width: 30, height: 30, borderRadius: '50%', background: c,
-                  border: 'none', cursor: 'pointer',
-                  outline: color === c ? `3px solid ${c}` : '2px solid transparent',
-                  outlineOffset: 3, transition: 'outline 0.15s',
-                }} />
-              ))}
-            </div>
-          </div>
+          <select 
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: 'var(--r)', border: '1px solid var(--brd)', background: 'var(--bg)', fontSize: 13, color: 'var(--txt2)' }}
+          >
+            <option value="All">All Statuses</option>
+            <option value="Active">Active</option>
+            <option value="Completed">Completed</option>
+          </select>
         </div>
-
-        {/* Team Members */}
-        <div style={S.card}>
-          <div style={S.cardTitle}>Project Team</div>
-          <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
-            These people can be assigned to tasks within this project. Removing someone will unassign them from all tasks and subtasks.
-          </div>
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-            {allUsers.map((u: any) => {
-              const sel      = members.includes(u.id)
-              const wasHere  = (project.members || []).includes(u.id)
-              const isNew    = sel && !wasHere
-              const isRemoved= !sel && wasHere
-              const ini      = (u.full_name || u.email || '?').split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase()
-
-              return (
-                <button key={u.id} type="button" onClick={() => toggleMember(u.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    padding: '5px 12px 5px 7px',
-                    borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
-                    fontSize: 12, fontWeight: 500, transition: 'all 0.15s',
-                    border: isRemoved
-                      ? '1.5px dashed var(--red)'
-                      : sel ? '1.5px solid var(--accent)' : '1.5px solid var(--brd2)',
-                    background: isRemoved
-                      ? 'var(--red2)'
-                      : sel ? 'var(--accent2)' : 'var(--bg3)',
-                    color: isRemoved ? 'var(--red)' : sel ? 'var(--accent)' : 'var(--txt2)',
-                  }}>
-                  <div style={{
-                    width: 22, height: 22, borderRadius: '50%', fontSize: 9,
-                    fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: isRemoved ? 'rgba(197,34,31,0.15)' : sel ? 'var(--accent)' : 'var(--bg2)',
-                    color: isRemoved ? 'var(--red)' : sel ? 'var(--accent2)' : 'var(--txt3)',
-                    flexShrink: 0,
-                  }}>{ini}</div>
-                  {isRemoved ? '✕ ' : sel ? '✓ ' : ''}{u.full_name || u.email}
-                  {isNew     && <span style={{ fontSize: 9, background: 'var(--accent)', color: 'var(--accent2)', padding: '1px 5px', borderRadius: 8, marginLeft: 2 }}>NEW</span>}
-                  {isRemoved && <span style={{ fontSize: 9, background: 'var(--red)', color: '#fff', padding: '1px 5px', borderRadius: 8, marginLeft: 2 }}>REMOVING</span>}
-                </button>
-              )
-            })}
-          </div>
-
-          {members.length > 0 && (
-            <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 10 }}>
-              {members.length} member{members.length !== 1 ? 's' : ''} in project team
-            </div>
-          )}
-        </div>
-
-        {/* Impact Preview */}
-        {hasImpact && (
-          <div style={{ ...S.card, border: '1px solid rgba(197,34,31,0.3)', background: 'var(--red2)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              ⚠️ Impact Preview — Assignees Being Removed
-            </div>
-
-            <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 12 }}>
-              Removing: <strong>{removedUsers.map((u: any) => u.full_name || u.email).join(', ')}</strong>
-            </div>
-
-            {impactTasks.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)', marginBottom: 6 }}>
-                  Affected Tasks ({impactTasks.length})
-                </div>
-                {impactTasks.map((t: any) => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--card-bg)', borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
-                    <span style={{ color: 'var(--red)' }}>📋</span>
-                    <span style={{ flex: 1, color: 'var(--txt)', fontWeight: 500 }}>{t.topic}</span>
-                    <span style={{ color: 'var(--txt3)', fontSize: 11 }}>
-                      {(Array.isArray(t.assignees) ? t.assignees : [t.owner]).filter(Boolean).join(', ')}
-                    </span>
-                    <span style={{ fontSize: 10, background: 'var(--amber2)', color: 'var(--amber)', padding: '1px 6px', borderRadius: 8 }}>will be unassigned</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {impactSubs.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)', marginBottom: 6 }}>
-                  Affected Subtasks ({impactSubs.length})
-                </div>
-                {impactSubs.map((s: any) => (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--card-bg)', borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
-                    <span style={{ color: 'var(--txt3)' }}>↳</span>
-                    <span style={{ flex: 1, color: 'var(--txt)' }}>{s.topic}</span>
-                    <span style={{ fontSize: 10, background: 'var(--amber2)', color: 'var(--amber)', padding: '1px 6px', borderRadius: 8 }}>will be unassigned</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Action buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 32 }}>
-          <button onClick={() => router.back()}
-            style={S.cancelBtn}>
-            Cancel
-          </button>
-          {hasImpact ? (
-            <button onClick={handleSave} disabled={saving}
-              style={{ ...S.dangerBtn, opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Saving...' : `⚠️ Confirm & Save (${impactTasks.length + impactSubs.length} items affected)`}
-            </button>
-          ) : (
-            <button onClick={handleSave} disabled={saving}
-              style={{ ...S.saveBtn, opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          )}
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize:12, color:'var(--txt3)' }}>{filteredProjects.length} project{filteredProjects.length!==1?'s':''}</div>
+          <Link href="/projects/create" className="btn btn-primary btn-sm"><Plus size={13}/> New Project</Link>
         </div>
       </div>
+
+      {filteredProjects.length === 0 && (
+        <div className="empty-state"><div style={{ fontSize:32 }}>📁</div><div style={{ marginTop:8 }}>No projects found.</div></div>
+      )}
+
+      {filteredProjects.map(proj => {
+        const ptasks = tasks.filter(t => t.project_name === proj.name)
+        // Apply status filter to tasks if needed, or keep showing all tasks inside matched project
+        const visibleTasks = statusFilter === 'All' ? ptasks : ptasks.filter(t => 
+           (statusFilter === 'Completed' && t.status === 'Completed') ||
+           (statusFilter === 'Active' && t.status !== 'Completed')
+        )
+
+        const done   = ptasks.filter(t => t.status === 'Completed').length
+        const pct    = ptasks.length ? Math.round(done / ptasks.length * 100) : 0
+        const isOpen = !collapsed[proj.id]
+
+        return (
+          <div key={proj.id} className="proj-card" style={{ marginBottom: 16, border: '1px solid var(--brd)', borderRadius: 'var(--rl)', background: 'var(--bg)' }}>
+            
+            {/* Project Header (Clickable to Expand/Collapse) */}
+            <div className="proj-header" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, cursor:'pointer' }} onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}>
+                <ChevronRight size={16} color="var(--txt3)" style={{ transform: isOpen?'rotate(90deg)':'', transition:'transform 0.2s', flexShrink:0 }}/>
+                <div className="proj-dot" style={{ background: proj.color_code||'#378ADD', width: 12, height: 12, borderRadius: '50%' }}/>
+                
+                <div style={{ flex: 1 }}>
+                  <div className="proj-name" style={{ fontSize: 16, fontWeight: 600 }}>{proj.name}</div>
+                  {/* Surfaced Description */}
+                  {proj.description && (
+                     <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 4, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                       {proj.description}
+                     </div>
+                  )}
+                </div>
+
+                <div className="proj-meta" style={{ fontSize: 13, color: 'var(--txt2)' }}>{ptasks.length} Tasks</div>
+                
+                {/* Project Overall Progress Tracker */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 100 }}>
+                  <div style={{ fontSize:12, color:'var(--txt3)', fontWeight: 500 }}>{pct}%</div>
+                  <div className="prog-bar" style={{ flex: 1, height: 6, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div className="prog-fill" style={{ width:`${pct}%`, height: '100%', background: proj.color_code||'#378ADD', borderRadius: 3 }}/>
+                  </div>
+                </div>
+
+                {/* Action buttons (Info button acts as Project View trigger) */}
+                <div style={{ display:'flex', gap:6, alignItems:'center', marginLeft: 16 }}>
+                  <button
+                    onClick={e => { e.stopPropagation(); setInfoProj(proj) }}
+                    title="Project Details"
+                    style={{ background:'var(--bg2)', border:'1px solid var(--brd)', borderRadius:'var(--r)', cursor:'pointer', color:'var(--txt)', display:'flex', alignItems:'center', justifyContent:'center', width:32, height:32, transition:'all 0.15s' }}>
+                    <Info size={16}/>
+                  </button>
+                  <Link href="/tasks/create" className="btn btn-sm" title="Add task" onClick={e => e.stopPropagation()}>
+                    <Plus size={14}/>
+                  </Link>
+                  {canDelete && (
+                    <button onClick={(e) => { e.stopPropagation(); deleteProject(proj); }} title="Delete project"
+                      style={{ background:'none', border:'none', cursor:'pointer', color:'#cc3333', display:'flex', padding:6 }}>
+                      <Trash2 size={16}/>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Task list Dropdown */}
+            {isOpen && (
+              <div style={{ padding: '0 16px 16px 40px' }}>
+                <div style={{ borderTop:'1px solid var(--brd)', marginBottom:12 }}/>
+                {visibleTasks.length === 0
+                  ? <div style={{ fontSize:13, color:'var(--txt3)', padding:'4px 0' }}>No tasks found.</div>
+                  : visibleTasks.map(t => {
+                      const subs     = subtasks.filter(s => s.parent_task_id === t.id)
+                      const taskOpen = !collTask[t.id]
+                      
+                      // Task Progress Logic (Based on subtasks if they exist, otherwise based on status)
+                      const completedSubs = subs.filter(s => s.status === 'Completed').length;
+                      const taskProgress = subs.length > 0 
+                          ? Math.round((completedSubs / subs.length) * 100) 
+                          : (t.status === 'Completed' ? 100 : (t.status === 'In Progress' ? 50 : 0));
+
+                      return (
+                        <div key={t.id} style={{ background: 'var(--bg2)', padding: '10px 12px', borderRadius: 'var(--r)', marginBottom: 8 }}>
+                          <div className="task-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            
+                            {subs.length > 0 ? (
+                              <ChevronRight size={14} color="var(--txt3)"
+                                style={{ transform: taskOpen?'rotate(90deg)':'', transition:'transform 0.2s', cursor:'pointer', flexShrink:0 }}
+                                onClick={e => { e.stopPropagation(); setCollTask(c => ({ ...c, [t.id]: !c[t.id] })) }}/>
+                            ) : (
+                              <div style={{ width:14, flexShrink:0 }}/>
+                            )}
+
+                            <StatusDot status={t.status}/>
+                            
+                            {/* Task Name */}
+                            <div className="task-name" style={{ flex:1, cursor:'pointer', fontSize: 14, fontWeight: 500 }}
+                              onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</div>
+                            
+                            {/* Sub-Task Count */}
+                            <div style={{ fontSize: 12, color: 'var(--txt3)', minWidth: 80 }}>
+                              {subs.length} Sub-task{subs.length !== 1 ? 's' : ''}
+                            </div>
+
+                            {/* Start Date | End Date */}
+                            <div style={{ fontSize: 12, color: 'var(--txt2)', minWidth: 150, display: 'flex', gap: 6 }}>
+                               <Calendar size={12} style={{ marginTop: 2 }}/> 
+                               {t.start_date || 'TBD'} <span style={{color: 'var(--txt3)'}}>|</span> {t.end_date || 'TBD'}
+                            </div>
+
+                            {/* Task Progress Tracker */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: 80 }}>
+                              <div style={{ width: '100%', height: 4, background: 'var(--brd)', borderRadius: 2, overflow: 'hidden' }}>
+                                 <div style={{ width: `${taskProgress}%`, height: '100%', background: taskProgress === 100 ? '#3B6D11' : 'var(--txt2)' }} />
+                              </div>
+                              <span style={{ fontSize: 11, color: 'var(--txt3)' }}>{taskProgress}%</span>
+                            </div>
+
+                            <StatusPill status={t.status}/>
+                            
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button onClick={() => router.push(`/tasks/${t.id}`)} className="btn btn-sm"
+                                style={{ padding:'4px 8px', fontSize:11 }}>Edit</button>
+                              {canDelete && (
+                                <button onClick={() => deleteTask(t.id, t.topic)}
+                                  style={{ background:'none', border:'none', cursor:'pointer', color:'#cc3333', padding:4 }}>
+                                  <Trash2 size={14}/>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Subtasks Dropdown */}
+                          {subs.length > 0 && taskOpen && (
+                            <div style={{ paddingLeft:36, marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {subs.map(s => (
+                                <div key={s.id} className="sub-row"
+                                  style={{ display: 'flex', alignItems: 'center', gap: 12, borderLeft:'2px solid var(--brd)', paddingLeft: 12 }}>
+                                  <span style={{ flex:1, fontSize: 13, color: 'var(--txt2)' }}>{s.topic}</span>
+                                  <span style={{ fontSize:11, color:'var(--txt3)' }}>{s.start_date || 'TBD'} → {s.end_date || 'TBD'}</span>
+                                  <StatusPill status={s.status}/>
+                                  {canDelete && (
+                                    <button onClick={() => deleteSubtask(s.id, s.topic)}
+                                      style={{ background:'none', border:'none', cursor:'pointer', color:'#cc3333', padding:2 }}>
+                                      <Trash2 size={12}/>
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                }
+              </div>
+            )}
+          </div>
+        )
+      })}
     </AppShell>
   )
-}
-
-const S: Record<string, React.CSSProperties> = {
-  alertErr:  { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 14 },
-  alertOk:   { background: 'var(--accent2)', color: 'var(--accent)', border: '1px solid rgba(46,125,50,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 14 },
-  alertWarn: { background: 'var(--amber2)', color: 'var(--amber)', border: '1px solid rgba(180,83,9,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 14, lineHeight: 1.6 },
-  card:      { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 12, padding: 18, marginBottom: 14 },
-  cardTitle: { fontSize: 10, fontWeight: 700, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 },
-  fg:        { marginBottom: 14 },
-  lbl:       { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', display: 'block', marginBottom: 5 },
-  input:     { width: '100%', padding: '8px 11px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 7, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
-  textarea:  { width: '100%', padding: '8px 11px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 7, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 80, resize: 'vertical' },
-  saveBtn:   { background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 8, padding: '8px 20px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
-  cancelBtn: { background: 'var(--bg3)', color: 'var(--txt2)', border: '1px solid var(--brd2)', borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
-  dangerBtn: { background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 20px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
 }
