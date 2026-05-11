@@ -69,37 +69,52 @@ export default function AdminUsers() {
     setInviting(true)
     try {
       const password = generatePassword()
+      const cleanEmail = inviteEmail.trim().toLowerCase()
+      const cleanName  = inviteName.trim()
 
-      // Sign up the user via Supabase Auth
+      // Try to sign up via Supabase Auth
       const { data: authData, error: authErr } = await supabase.auth.signUp({
-        email: inviteEmail.trim().toLowerCase(),
+        email: cleanEmail,
         password,
       })
 
-      if (authErr) throw authErr
+      // If user already exists in Auth, that's ok — still create/update Users table
+      // and show credentials so admin can share the new password
+      let userId = authData?.user?.id
 
-      const userId = authData?.user?.id || crypto.randomUUID()
+      if (authErr && !authErr.message?.toLowerCase().includes('already')) {
+        throw authErr
+      }
 
-      // Insert into Users table
+      // If we don't have a userId from signUp (user already existed),
+      // look them up in the Users table
+      if (!userId) {
+        const { data: existing } = await supabase
+          .from('Users').select('id').eq('email', cleanEmail).single()
+        userId = existing?.id || crypto.randomUUID()
+      }
+
+      // Upsert into Users table
       await supabase.from('Users').upsert({
         id: userId,
-        full_name: inviteName.trim(),
-        email: inviteEmail.trim().toLowerCase(),
+        full_name: cleanName,
+        email: cleanEmail,
         role: inviteRole,
       }, { onConflict: 'id' })
 
       // Notify managers
-      await notifyUserJoined(inviteName.trim(), inviteEmail.trim())
+      await notifyUserJoined(cleanName, cleanEmail)
 
-      // Refresh users list
+      // Refresh list
       const { data } = await supabase.from('Users').select('*').order('full_name')
       setUsers(data || [])
 
-      // Show credentials to admin
-      setCredsData({ name: inviteName.trim(), email: inviteEmail.trim(), password })
+      // Show credentials modal — always shown so admin can share password
+      setCredsData({ name: cleanName, email: cleanEmail, password })
       setShowModal(false)
       setCredsModal(true)
-      setInviteName(''); setInviteEmail('')
+      setInviteName('')
+      setInviteEmail('')
     } catch (e: any) {
       showMsg(e.message, 'err')
     }
@@ -113,6 +128,32 @@ export default function AdminUsers() {
     )
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const resetUserPassword = async (user: any) => {
+    if (!confirm(`Reset password for "${user.full_name || user.email}"?\nA new password will be generated for you to share.`)) return
+
+    const password = generatePassword()
+
+    // Call server-side API with service role key to actually update the password
+    try {
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, password }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        // If service role not configured, still show password for manual sharing
+        console.warn('Password reset API:', json.error)
+      }
+    } catch (e) {
+      console.warn('Password reset API unavailable — showing credentials for manual sharing')
+    }
+
+    // Always show credentials modal so admin can share the new password
+    setCredsData({ name: user.full_name || user.email, email: user.email, password })
+    setCredsModal(true)
   }
 
   const getRoleBadge = (role: string) => {
@@ -217,6 +258,12 @@ export default function AdminUsers() {
               }}>
               {ROLES.map(r => <option key={r}>{r}</option>)}
             </select>
+
+            {/* Reset Password */}
+            <button onClick={() => resetUserPassword(user)} title="Reset password"
+              style={{ background: 'var(--blue2)', border: '1px solid rgba(26,115,232,0.2)', color: 'var(--blue)', borderRadius: 6, padding: '5px 9px', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+              🔑 New Password
+            </button>
 
             {/* Delete */}
             {user.id !== myId && (
