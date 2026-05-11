@@ -3,173 +3,213 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
+import { StatusPill, StatusDot, TypePill } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
+import { ChevronRight, LayoutList, Columns, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import Link from 'next/link'
-import { getAssignees } from '@/lib/projectUtils'
 
-const STATUS_DOT: Record<string, string> = {
-  'Not Started': 'var(--txt3)', 'In Progress': '#3b82f6',
-  'On-Hold': '#f59e0b', 'Completed': '#22c55e',
+const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
+const DOT_CLR: Record<string,string> = {
+  'Not Started':'#aaa','In Progress':'#378ADD','On-Hold':'#EF9F27','Completed':'#639922'
 }
-const STATUS_PILL: Record<string, { bg: string; color: string }> = {
-  'Not Started': { bg: 'var(--pill-ns-bg)', color: 'var(--pill-ns-txt)' },
-  'In Progress': { bg: 'var(--blue2)', color: 'var(--blue)' },
-  'On-Hold':     { bg: 'var(--amber2)', color: 'var(--amber)' },
-  'Completed':   { bg: 'var(--accent2)', color: 'var(--accent)' },
-}
-const STATUSES  = ['Not Started', 'In Progress', 'On-Hold', 'Completed']
-const TASK_TYPES = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
-
-function Pill({ status }: { status: string }) {
-  const s = STATUS_PILL[status] || STATUS_PILL['Not Started']
-  return <span style={{ background: s.bg, color: s.color, fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500 }}>{status}</span>
-}
+const SORT_OPTIONS = ['Project name','Start date','Task no'] as const
 
 export default function AllTasks() {
   const router = useRouter()
-  const [tasks,    setTasks]    = useState<any[]>([])
-  const [subtasks, setSubtasks] = useState<any[]>([])
-  const [projects, setProjects] = useState<string[]>([])
-  const [users,    setUsers]    = useState<any[]>([])
-  const [myRole,   setMyRole]   = useState('')
-  const [loading,  setLoading]  = useState(true)
+  const [tasks,       setTasks]       = useState<any[]>([])
+  const [subtasks,    setSubtasks]    = useState<any[]>([])
+  const [projects,    setProjects]    = useState<string[]>([])
+  const [myRole,      setMyRole]      = useState('')
+  const [sf,          setSf]          = useState('All')
+  const [pf,          setPf]          = useState('All')
+  const [af,          setAf]          = useState('All')
+  const [sortBy,      setSortBy]      = useState<typeof SORT_OPTIONS[number]>('Project name')
+  const [view,        setView]        = useState<'list'|'kanban'>('list')
+  const [collTask,    setCollTask]    = useState<Record<string,boolean>>({})
+  const [allExpanded, setAllExpanded] = useState(true)
 
-  // filters
-  const [fType,     setFType]     = useState('All')
-  const [fProject,  setFProject]  = useState('All')
-  const [fStatus,   setFStatus]   = useState('All')
-  const [fAssignee, setFAssignee] = useState('All')
-
-  useEffect(() => {
+  useEffect(()=>{
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const { data: u } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
-      setMyRole(u?.role || 'Team Member')
-      const [{ data: t }, { data: s }, { data: us }] = await Promise.all([
+      setMyRole(u?.role||'')
+      const [t, s] = await Promise.all([
         supabase.from('Tasks').select('*').order('project_name').order('end_date'),
         supabase.from('Subtasks').select('*'),
-        supabase.from('Users').select('id,full_name').neq('role', 'Admin'),
       ])
-      const allT = t || []
-      setTasks(allT)
-      setSubtasks(s || [])
-      setUsers(us || [])
-      setProjects([...new Set(allT.map((x: any) => x.project_name).filter(Boolean))] as string[])
-      setLoading(false)
+      setTasks(t.data||[])
+      setSubtasks(s.data||[])
+      setProjects([...new Set((t.data||[]).map((x:any)=>x.project_name).filter(Boolean))] as string[])
     }
     load()
-  }, [])
+  },[])
 
-  if (myRole && myRole === 'Team Member') return (
-    <AppShell title="All Tasks">
-      <div style={{ background: 'var(--red2)', color: 'var(--red)', padding: '10px 14px', borderRadius: 6, fontSize: 12 }}>
-        Access denied — Managers and Admins only.
-      </div>
-    </AppShell>
+  if (myRole && myRole==='Team Member') return (
+    <AppShell title="All Tasks"><div className="alert alert-error">Access denied — Managers and Admins only.</div></AppShell>
   )
 
-  const canDelete = myRole === 'Admin' || myRole === 'Manager'
+  // All unique assignees for filter
+  const assignees = [...new Set(
+    tasks.flatMap(t => (t.owner||'').split(',').map((o:string) => o.trim()).filter(Boolean))
+  )]
 
-  const deleteTask = async (id: string, topic: string) => {
-    if (!confirm(`Delete "${topic}"? This cannot be undone.`)) return
-    await supabase.from('Subtasks').delete().eq('parent_task_id', id)
-    await supabase.from('Tasks').delete().eq('id', id)
-    setTasks(p => p.filter((t: any) => t.id !== id))
-    setSubtasks(p => p.filter((s: any) => s.parent_task_id !== id))
+  let filtered = tasks
+  if (sf!=='All') filtered = filtered.filter(t => t.status===sf)
+  if (pf!=='All') filtered = filtered.filter(t => t.project_name===pf)
+  if (af!=='All') filtered = filtered.filter(t => (t.owner||'').includes(af))
+
+  const sortTasks = (arr: any[]) => [...arr].sort((a, b) => {
+    if (sortBy === 'Start date') return (a.start_date||'').localeCompare(b.start_date||'')
+    if (sortBy === 'Task no')    return (a.id||'').localeCompare(b.id||'')
+    return (a.topic||'').localeCompare(b.topic||'')
+  })
+
+  const grouped: Record<string,any[]> = {}
+  filtered.forEach(t => { const p=t.project_name||'No Project'; grouped[p]=(grouped[p]||[]).concat(t) })
+
+  let groupEntries = Object.entries(grouped)
+  if (sortBy === 'Task no')           groupEntries = groupEntries.sort((a,b) => b[1].length - a[1].length)
+  else if (sortBy === 'Project name') groupEntries = groupEntries.sort((a,b) => a[0].localeCompare(b[0]))
+
+  const toggleAll = () => {
+    const next = !allExpanded
+    setAllExpanded(next)
+    const s: Record<string,boolean> = {}
+    filtered.forEach(t => { s[t.id] = !next })
+    setCollTask(s)
   }
 
-  // Apply filters
-  let filtered = tasks
-  if (fType     !== 'All') filtered = filtered.filter((t: any) => t.type === fType)
-  if (fProject  !== 'All') filtered = filtered.filter((t: any) => t.project_name === fProject)
-  if (fStatus   !== 'All') filtered = filtered.filter((t: any) => t.status === fStatus)
-  if (fAssignee !== 'All') filtered = filtered.filter((t: any) =>
-    getAssignees(t).some((a: any) => a.toLowerCase() === fAssignee.toLowerCase())
-  )
+  const today = new Date(); today.setHours(0,0,0,0)
 
-  if (loading) return <AppShell title="All Tasks"><div style={{ padding: 40, color: 'var(--txt3)', textAlign: 'center' }}>Loading…</div></AppShell>
+  // ── Shared kanban card — identical to My Tasks ────────────────────
+  const KanbanCard = ({ task }: { task: any }) => {
+    const subs     = subtasks.filter(s => s.parent_task_id === task.id)
+    const doneSubs = subs.filter(s => s.status === 'Completed').length
+    const isOver   = task.end_date && new Date(task.end_date) < today && task.status !== 'Completed'
+    return (
+      <div
+        className={`kanban-card${isOver ? ' kanban-card-overdue' : ''}`}
+        onClick={() => router.push(`/tasks/${task.id}`)}
+      >
+        <div className="kc-title">{task.topic}</div>
+        <div className="kc-chips">
+          {task.project_name && <span className="kc-chip kc-chip-project">{task.project_name}</span>}
+          {task.type && task.type !== 'One-time' && <span className="kc-chip kc-chip-type">↻ {task.type}</span>}
+          {subs.length > 0 && <span className="kc-chip kc-chip-sub">{doneSubs}/{subs.length} done</span>}
+        </div>
+        {task.owner && <div className="kc-owner">{task.owner}</div>}
+      </div>
+    )
+  }
 
   return (
     <AppShell title="All Tasks">
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select style={S.sel} value={fType} onChange={e => setFType(e.target.value)}>
-          <option value="All">All Types</option>
-          {TASK_TYPES.map((t: any) => <option key={t}>{t}</option>)}
-        </select>
-        <select style={S.sel} value={fProject} onChange={e => setFProject(e.target.value)}>
+      <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
+        {/* List-only: status filter hidden in kanban since columns = stages */}
+        {view === 'list' && (
+          <select className="form-select" style={{width:150}} value={sf} onChange={e=>setSf(e.target.value)}>
+            <option value="All">All Status</option>
+            {STATUSES.map(s=><option key={s}>{s}</option>)}
+          </select>
+        )}
+        <select className="form-select" style={{width:195}} value={pf} onChange={e=>setPf(e.target.value)}>
           <option value="All">All Projects</option>
-          {projects.map((p: any) => <option key={p}>{p}</option>)}
+          {projects.map(p=><option key={p}>{p}</option>)}
         </select>
-        <select style={S.sel} value={fStatus} onChange={e => setFStatus(e.target.value)}>
-          <option value="All">All Status</option>
-          {STATUSES.map((s: any) => <option key={s}>{s}</option>)}
-        </select>
-        <select style={S.sel} value={fAssignee} onChange={e => setFAssignee(e.target.value)}>
+        <select className="form-select" style={{width:175}} value={af} onChange={e=>setAf(e.target.value)}>
           <option value="All">All Assignees</option>
-          {users.map((u: any) => <option key={u.id} value={u.full_name}>{u.full_name}</option>)}
+          {assignees.map(a=><option key={a}>{a}</option>)}
         </select>
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--txt3)' }}>{filtered.length} tasks</div>
-        <Link href="/tasks/create" style={S.newBtn}>+ Create Task</Link>
+        <select className="form-select" style={{width:165}} value={sortBy} onChange={e=>setSortBy(e.target.value as any)}>
+          {SORT_OPTIONS.map(s=><option key={s}>Sort: {s}</option>)}
+        </select>
+
+        {view === 'list' && (
+          <button className="btn btn-sm" onClick={toggleAll} style={{ display:'flex', alignItems:'center', gap:4 }}>
+            {allExpanded ? <ChevronsDownUp size={13}/> : <ChevronsUpDown size={13}/>}
+            {allExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
+        )}
+
+        <div style={{ display:'flex', gap:4 }}>
+          <button className={view==='list'?'btn btn-primary btn-sm':'btn btn-sm'} onClick={()=>setView('list')} title="List view"><LayoutList size={15}/></button>
+          <button className={view==='kanban'?'btn btn-primary btn-sm':'btn btn-sm'} onClick={()=>setView('kanban')} title="Kanban view"><Columns size={15}/></button>
+        </div>
+        <div style={{fontSize:12,color:'var(--txt3)'}}>{filtered.length} tasks</div>
+        <Link href="/tasks/create" className="btn btn-primary btn-sm">+ Create Task</Link>
       </div>
 
-      {filtered.length === 0 ? (
-        <div style={S.empty}><div style={{ fontSize: 32 }}>📋</div><div style={{ marginTop: 8 }}>No tasks found.</div></div>
-      ) : (
-        <div style={S.tableWrap}>
-          {/* Header */}
-          <div style={S.headerRow}>
-            <div style={{ ...S.col, flex: 3 }}>Task Title</div>
-            <div style={{ ...S.col, flex: 2 }}>Project</div>
-            <div style={{ ...S.col, flex: 1 }}>Type</div>
-            <div style={{ ...S.col, flex: 1.2 }}>Start</div>
-            <div style={{ ...S.col, flex: 1.2 }}>End</div>
-            <div style={{ ...S.col, flex: 2 }}>Assignees</div>
-            <div style={{ ...S.col, flex: 1.5 }}>Status</div>
-            {canDelete && <div style={{ ...S.col, width: 60 }}></div>}
-          </div>
-
-          {filtered.map((t: any) => {
-            const subs = subtasks.filter((s: any) => String(s.parent_task_id) === String(t.id))
-            const today = new Date(); today.setHours(0, 0, 0, 0)
-            const over  = t.status !== 'Completed' && t.end_date && new Date(t.end_date) < today
-            const assignees = getAssignees(t)
-
-            return (
-              <div key={t.id}
-                style={{ ...S.taskRow, ...(over ? S.overdueRow : {}) }}
-                onClick={() => router.push(`/tasks/${t.id}`)}>
-                <div style={{ ...S.cell, flex: 3 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[t.status] || 'var(--txt3)', flexShrink: 0 }} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={S.taskName}>{t.topic}</div>
-                    {subs.length > 0 && (
-                      <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
-                        {subs.filter((s: any) => s.status === 'Completed').length}/{subs.length} subtasks
+      {/* LIST VIEW */}
+      {view === 'list' && (
+        <>
+          {groupEntries.map(([projName, ptasks])=>(
+            <div key={projName} className="card" style={{padding:0,overflow:'hidden',marginBottom:12}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',background:'var(--bg2)',borderBottom:'0.5px solid var(--brd)'}}>
+                <div className="proj-dot" style={{background:'#378ADD'}}/>
+                <div style={{fontSize:14,fontWeight:500,flex:1,color:'var(--txt)'}}>{projName}</div>
+                <div style={{fontSize:12,color:'var(--txt3)'}}>{ptasks.length} task{ptasks.length!==1?'s':''}</div>
+              </div>
+              <div style={{padding:'8px 16px 12px 16px'}}>
+                {sortTasks(ptasks).map(t=>{
+                  const subs = subtasks.filter(s=>s.parent_task_id===t.id)
+                  const taskOpen = !collTask[t.id]
+                  return (
+                    <div key={t.id}>
+                      <div className="task-row">
+                        {subs.length>0
+                          ? <ChevronRight size={12} color="var(--txt3)"
+                              style={{transform:taskOpen?'rotate(90deg)':'',transition:'transform 0.2s',cursor:'pointer',flexShrink:0}}
+                              onClick={e=>{e.stopPropagation();setCollTask(c=>({...c,[t.id]:!c[t.id]}))}}/>
+                          : <div style={{width:12,flexShrink:0}}/>
+                        }
+                        <StatusDot status={t.status}/>
+                        <div className="task-name" style={{flex:1}} onClick={()=>router.push(`/tasks/${t.id}`)}>{t.topic}</div>
+                        <div className="task-meta"><span>{t.owner}</span><span>{t.end_date}</span></div>
+                        {(t.tags||[]).map((tag:string)=><span key={tag} className="pill pill-tag" style={{fontSize:10}}>{tag}</span>)}
+                        <StatusPill status={t.status}/>
+                        <TypePill type={t.type}/>
                       </div>
-                    )}
-                  </div>
+                      {subs.length>0&&taskOpen&&(
+                        <div style={{paddingLeft:28,marginBottom:4}}>
+                          {subs.map(s=>(
+                            <div key={s.id} className="sub-row">
+                              <span style={{color:'var(--txt3)',fontSize:12}}>↳</span>
+                              <span style={{flex:1}}>{s.topic}</span>
+                              <span style={{fontSize:11,color:'var(--txt3)'}}>{s.start_date} → {s.end_date}</span>
+                              <StatusPill status={s.status}/>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+          {filtered.length===0&&<div className="empty-state"><div style={{fontSize:32}}>📋</div><div style={{marginTop:8}}>No tasks found.</div></div>}
+        </>
+      )}
+
+      {/* KANBAN VIEW — status filter hidden, project + assignee filters apply */}
+      {view === 'kanban' && (
+        <div className="kanban-grid">
+          {STATUSES.map(status => {
+            let kanbanTasks = tasks
+            if (pf!=='All') kanbanTasks = kanbanTasks.filter(t=>t.project_name===pf)
+            if (af!=='All') kanbanTasks = kanbanTasks.filter(t=>(t.owner||'').includes(af))
+            const group = kanbanTasks.filter(t => t.status === status)
+            return (
+              <div key={status}>
+                <div className="col-header">
+                  <div style={{ width:8, height:8, borderRadius:'50%', background: DOT_CLR[status] }}/>
+                  {status}<span className="col-count">{group.length}</span>
                 </div>
-                <div style={{ ...S.cell, flex: 2, color: 'var(--txt3)', fontSize: 11 }}>{t.project_name || '—'}</div>
-                <div style={{ ...S.cell, flex: 1, fontSize: 11 }}>
-                  {t.type !== 'One-time'
-                    ? <span style={{ background: '#3d2400', color: '#f59e0b', fontSize: 9, padding: '1px 6px', borderRadius: 8 }}>↻ {t.type}</span>
-                    : <span style={{ color: 'var(--txt3)', fontSize: 11 }}>One-time</span>
-                  }
-                </div>
-                <div style={{ ...S.cell, flex: 1.2, color: 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>{t.start_date || '—'}</div>
-                <div style={{ ...S.cell, flex: 1.2, color: over ? 'var(--red)' : 'var(--txt3)', fontFamily: 'monospace', fontSize: 11 }}>
-                  {over && '⚠ '}{t.end_date || '—'}
-                </div>
-                <div style={{ ...S.cell, flex: 2, color: 'var(--txt3)', fontSize: 11 }}>{assignees.join(', ') || '—'}</div>
-                <div style={{ ...S.cell, flex: 1.5 }}><Pill status={t.status} /></div>
-                {canDelete && (
-                  <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end' }}
-                    onClick={e => e.stopPropagation()}>
-                    <button onClick={() => deleteTask(t.id, t.topic)} style={S.delBtn}>🗑</button>
-                  </div>
-                )}
+                {group.length === 0
+                  ? <div className="col-empty">No tasks</div>
+                  : group.map(t => <KanbanCard key={t.id} task={t}/>)
+                }
               </div>
             )
           })}
@@ -177,18 +217,4 @@ export default function AllTasks() {
       )}
     </AppShell>
   )
-}
-
-const S: Record<string, React.CSSProperties> = {
-  sel:        { padding: '5px 9px', border: '1px solid var(--brd2)', borderRadius: 6, background: 'var(--card-bg)', fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'inherit', cursor: 'pointer' },
-  newBtn:     { background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' },
-  empty:      { textAlign: 'center', padding: '4rem 0', color: 'var(--txt3)', fontSize: 13 },
-  tableWrap:  { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 12, overflow: 'hidden' },
-  headerRow:  { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: 'var(--input-bg)', borderBottom: '1px solid var(--brd)' },
-  col:        { fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--txt3)' },
-  taskRow:    { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--row-brd)', cursor: 'pointer', transition: 'background 0.12s' },
-  overdueRow: { background: 'rgba(239,68,68,0.04)', borderLeft: '2px solid rgba(239,68,68,0.35)' },
-  cell:       { display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' },
-  taskName:   { fontSize: 12.5, fontWeight: 500, color: 'var(--txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  delBtn:     { background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: '3px 5px' },
 }
