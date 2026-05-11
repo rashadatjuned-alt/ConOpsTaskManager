@@ -273,4 +273,110 @@ export default function AllProjects() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 100 }}>
                     <span style={{ fontSize: 11, color: 'var(--txt3)', fontWeight: 500, minWidth: 24 }}>{pct}%</span>
                     <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 2, overflow: 'hidden' }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: proj.color_code || '#37
+                      <div style={{ width: `${pct}%`, height: '100%', background: proj.color_code || '#378ADD', borderRadius: 2, transition: 'width 0.3s ease' }}/>
+                    </div>
+                  </div>
+
+                  {/* Buttons */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); setInfoProj(proj) }}
+                      style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 4, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--txt3)', cursor: 'pointer' }}
+                      onMouseEnter={e => { e.currentTarget.style.background='var(--bg2)'; e.currentTarget.style.color='var(--txt)'; e.currentTarget.style.borderColor='var(--brd)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--txt3)'; e.currentTarget.style.borderColor='transparent' }}
+                      title="Project Information"
+                    >
+                      <Info size={13}/>
+                    </button>
+                    <Link 
+                      href="/tasks/create" 
+                      onClick={e => e.stopPropagation()}
+                      style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 4, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--txt3)', cursor: 'pointer' }}
+                      onMouseEnter={e => { e.currentTarget.style.background='var(--bg2)'; e.currentTarget.style.color='var(--txt)'; e.currentTarget.style.borderColor='var(--brd)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--txt3)'; e.currentTarget.style.borderColor='transparent' }}
+                      title="Add Task"
+                    >
+                      <Plus size={13}/>
+                    </Link>
+                    {canDelete && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); deleteProject(proj); }}
+                        style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 4, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', cursor: 'pointer' }}
+                        onMouseEnter={e => { e.currentTarget.style.background='rgba(239, 68, 68, 0.1)'; e.currentTarget.style.borderColor='transparent' }}
+                        onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor='transparent' }}
+                        title="Delete Project"
+                      >
+                        <Trash2 size={13}/>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Collapsible Main Tasks List (NO Subtasks, Compact) */}
+              {isOpen && (
+                <div style={{ padding: '4px 14px 12px 34px', borderTop: '1px solid var(--brd)' }}>
+                  {ptasks.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--txt3)', padding: '4px 0' }}>No tasks.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {ptasks.map(t => (
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--bg2)' }}>
+                          
+                          {/* Task Name & Dot */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                            <div style={{ width: 6, height: 6, borderRadius: '50%', border: '1.5px solid var(--txt3)' }}></div>
+                            <div 
+                              style={{ fontSize: 13, color: 'var(--txt)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                              onClick={() => router.push(`/tasks/${t.id}`)}
+                            >
+                              {t.topic}
+                            </div>
+                          </div>
+
+                          {/* Task Dates, Status & Actions */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+                            <div style={{ fontSize: 11, color: 'var(--txt3)', display: 'flex', alignItems: 'center', gap: 4, width: 130, justifyContent: 'flex-end' }}>
+                               <span>{t.start_date || 'TBD'} <span style={{ margin: '0 2px' }}>→</span> {t.end_date || 'TBD'}</span>
+                            </div>
+
+                            <div style={{ width: 80, display: 'flex', justifyContent: 'flex-end' }}>
+                               <StatusPill status={t.status}/>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 12 }}>
+                              <button 
+                                onClick={() => router.push(`/tasks/${t.id}`)} 
+                                style={{ background: 'var(--bg2)', border: '1px solid transparent', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: 'var(--txt2)', cursor: 'pointer', transition: '0.2s' }}
+                                onMouseEnter={e => { e.currentTarget.style.color='var(--txt)'; e.currentTarget.style.borderColor='var(--brd)' }}
+                                onMouseLeave={e => { e.currentTarget.style.color='var(--txt2)'; e.currentTarget.style.borderColor='transparent' }}
+                              >
+                                Edit
+                              </button>
+                              {canDelete && (
+                                <button 
+                                  onClick={() => deleteTask(t.id, t.topic)}
+                                  style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 4, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', cursor: 'pointer' }}
+                                  onMouseEnter={e => { e.currentTarget.style.background='rgba(239, 68, 68, 0.1)' }}
+                                  onMouseLeave={e => { e.currentTarget.style.background='transparent' }}
+                                >
+                                  <Trash2 size={12}/>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+          )
+        })}
+      </div>
+    </AppShell>
+  )
+}
