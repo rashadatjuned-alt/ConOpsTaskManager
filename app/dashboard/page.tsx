@@ -18,7 +18,6 @@ export default function Dashboard() {
   const [notifs,   setNotifs]   = useState<any[]>([])
   const [me,       setMe]       = useState<any>(null)
   const [loading,  setLoading]  = useState(true)
-  // Track which pipeline columns are expanded
   const [colExpanded, setColExpanded] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
@@ -76,8 +75,7 @@ export default function Dashboard() {
   const completionRate = total ? Math.round(completed/total*100) : 0
 
   const StatCard = ({ icon, label, value, color, onClick }: any) => (
-    <div className="stat-card" onClick={onClick}
-      style={{ cursor: onClick ? 'pointer' : 'default' }}>
+    <div className="stat-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
         <div style={{ padding:6, borderRadius:'var(--r)', background:'var(--bg)', display:'flex' }}>{icon}</div>
       </div>
@@ -94,12 +92,12 @@ export default function Dashboard() {
     <AppShell title="Dashboard">
       {/* Stats */}
       <div className="stats-grid" style={{ gridTemplateColumns:'repeat(5,1fr)', marginBottom:16 }}>
-        <StatCard icon={<Folders size={16} color="#185FA5"/>}    label="Total Tasks"  value={total}        color="blue" />
-        <StatCard icon={<AlertCircle size={16} color="#cc3333"/>} label="Overdue"      value={overdue}      color="red"
+        <StatCard icon={<Folders size={16} color="#185FA5"/>}     label="Total Tasks"  value={total}        color="blue" />
+        <StatCard icon={<AlertCircle size={16} color="#cc3333"/>}  label="Overdue"      value={overdue}      color="red"
           onClick={overdue > 0 ? () => router.push('/my-tasks') : undefined} />
-        <StatCard icon={<TrendingUp size={16} color="#854F0B"/>}  label="In Progress"  value={inProg}       color="amber" />
-        <StatCard icon={<CheckCircle2 size={16} color="#3B6D11"/>}label="Completed"    value={completed}    color="green" />
-        <StatCard icon={<Users size={16} color="#534AB7"/>}       label="Team Members" value={users.length} />
+        <StatCard icon={<TrendingUp size={16} color="#854F0B"/>}   label="In Progress"  value={inProg}       color="amber" />
+        <StatCard icon={<CheckCircle2 size={16} color="#3B6D11"/>} label="Completed"    value={completed}    color="green" />
+        <StatCard icon={<Users size={16} color="#534AB7"/>}        label="Team Members" value={users.length} />
       </div>
 
       {/* Completion bar */}
@@ -133,7 +131,7 @@ export default function Dashboard() {
               {myOverdue.slice(0,3).map(t => (
                 <div key={t.id} className="task-row overdue" onClick={() => router.push(`/tasks/${t.id}`)}>
                   <StatusDot status={t.status}/>
-                  <div style={{ flex:1 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
                     <div className="task-name">{t.topic}</div>
                     <div className="task-meta"><span>Due {t.end_date}</span><span>{t.project_name}</span></div>
                   </div>
@@ -142,7 +140,6 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-
           <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--txt3)', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
             Due This Week
             <span style={{ background:'var(--bg2)', color:'var(--txt3)', fontSize:10, padding:'1px 6px', borderRadius:10 }}>{myDueSoon.length}</span>
@@ -152,7 +149,7 @@ export default function Dashboard() {
             : myDueSoon.slice(0,4).map(t => (
                 <div key={t.id} className="task-row" onClick={() => router.push(`/tasks/${t.id}`)}>
                   <StatusDot status={t.status}/>
-                  <div style={{ flex:1 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
                     <div className="task-name">{t.topic}</div>
                     <div className="task-meta"><span>Due {t.end_date}</span><span>{t.project_name}</span></div>
                   </div>
@@ -198,7 +195,7 @@ export default function Dashboard() {
 
         {/* Col 3 — Notifications */}
         <div>
-          {notifs.length > 0 && (
+          {notifs.length > 0 ? (
             <>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--txt3)' }}>
@@ -217,14 +214,13 @@ export default function Dashboard() {
                 ))}
               </div>
             </>
-          )}
-          {notifs.length === 0 && (
+          ) : (
             <div style={{ fontSize:12, color:'var(--txt3)' }}>No unread notifications.</div>
           )}
         </div>
       </div>
 
-      {/* Pipeline kanban */}
+      {/* ── Team Pipeline ─────────────────────────────────────────────── */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
         <div style={{ fontSize:11, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', color:'var(--txt3)' }}>Team Pipeline</div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -235,56 +231,80 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/*
+        Uses .kanban-grid — always 4 equal columns, static width.
+        Simple cards: task name + due date only (no rich chips).
+      */}
       <div className="kanban-grid">
         {STATUSES.map(status => {
-          const group = tasks.filter(t => t.status === status)
+          const group      = tasks.filter(t => t.status === status)
           const isExpanded = colExpanded[status]
-          const visibleTasks = isExpanded ? group : group.slice(0, PIPELINE_PREVIEW)
-          const remaining = group.length - PIPELINE_PREVIEW
+          const visible    = isExpanded ? group : group.slice(0, PIPELINE_PREVIEW)
+          const remaining  = group.length - PIPELINE_PREVIEW
 
           return (
-            <div key={status}>
+            <div key={status} className="kanban-col">
+              {/* Column header */}
               <div className="col-header">
                 <div style={{ width:8, height:8, borderRadius:'50%', background:
                   status==='Not Started'?'#aaa':status==='In Progress'?'#378ADD':
                   status==='On-Hold'?'#EF9F27':'#639922' }}/>
-                {status}<span className="col-count">{group.length}</span>
+                {status}
+                <span className="col-count">{group.length}</span>
               </div>
 
+              {/* Task cards — simple style for dashboard */}
               {group.length === 0
                 ? <div className="col-empty">No tasks</div>
-                : visibleTasks.map(t => (
-                    <div key={t.id} className="task-row" style={{ marginBottom:6, cursor:'pointer' }}
-                      onClick={() => router.push(`/tasks/${t.id}`)}>
-                      <StatusDot status={t.status}/>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div className="task-name" style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.topic}</div>
-                        {t.end_date && (
-                          <div className="task-meta"><span>Due {t.end_date}</span></div>
-                        )}
+                : visible.map(t => (
+                    <div key={t.id}
+                      onClick={() => router.push(`/tasks/${t.id}`)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: 'var(--bg)',
+                        border: '0.5px solid var(--brd)',
+                        borderRadius: 'var(--r)',
+                        padding: '8px 10px',
+                        marginBottom: 6,
+                        cursor: 'pointer',
+                        transition: 'border-color 0.15s, box-shadow 0.15s',
+                        minWidth: 0,
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--brd2)'
+                        ;(e.currentTarget as HTMLElement).style.boxShadow = 'var(--shd)'
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.borderColor = 'var(--brd)'
+                        ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
+                      }}>
+                      {/* Task name — wraps, never overflows column */}
+                      <div style={{ fontSize:13, fontWeight:500, color:'var(--txt)', lineHeight:1.4, wordBreak:'break-word', overflowWrap:'break-word' }}>
+                        {t.topic}
                       </div>
+                      {t.end_date && (
+                        <div style={{ fontSize:11, color:'var(--txt3)', marginTop:4 }}>
+                          Due {t.end_date}
+                        </div>
+                      )}
                     </div>
                   ))
               }
 
-              {/* Expand / collapse more */}
+              {/* Expand / collapse */}
               {group.length > PIPELINE_PREVIEW && (
                 <button
                   onClick={() => setColExpanded(prev => ({ ...prev, [status]: !prev[status] }))}
                   style={{
-                    width: '100%', marginTop:4, padding:'5px 0',
+                    width: '100%', marginTop:2, padding:'5px 0',
                     background:'var(--bg2)', border:'0.5px solid var(--brd)',
                     borderRadius:'var(--r)', fontSize:11, color:'var(--txt3)',
-                    cursor:'pointer', fontFamily:'Inter,sans-serif',
-                    transition:'background 0.15s',
+                    cursor:'pointer', fontFamily:'Inter,sans-serif', transition:'background 0.15s',
                   }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg2)')}
-                >
-                  {isExpanded
-                    ? '▲ Show less'
-                    : `+${remaining} more`
-                  }
+                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg2)')}>
+                  {isExpanded ? '▲ Show less' : `+${remaining} more`}
                 </button>
               )}
             </div>
