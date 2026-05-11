@@ -113,16 +113,63 @@ body { font-family:'Inter',sans-serif; font-size:14px; color:var(--txt); backgro
 .prog-bar     { height:4px; background:var(--bg2); border-radius:2px; overflow:hidden; margin-top:8px; }
 .prog-fill    { height:100%; border-radius:2px; }
 
-/* Kanban layout */
-.kanban-grid  { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
-.kanban-col   { min-height:200px; border-radius:var(--r); border:2px dashed transparent; transition:border-color 0.15s, background 0.15s; padding:4px; }
-.kanban-col.drag-over { border-color:var(--brd2); background:var(--bg2); }
-.col-header   { font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--txt3); padding-bottom:8px; border-bottom:0.5px solid var(--brd); margin-bottom:10px; display:flex; align-items:center; gap:6px; }
-.col-count    { background:var(--bg2); color:var(--txt3); font-size:10px; padding:1px 6px; border-radius:10px; }
-.col-empty    { font-size:12px; color:var(--txt3); text-align:center; padding:16px; border:0.5px dashed var(--brd); border-radius:var(--r); }
+/* ── Kanban layout ─────────────────────────────────────────────────
+   Columns are ALWAYS equal width and static regardless of content.
+   The grid never collapses or resizes based on card content.
+   Columns scroll independently if cards overflow.
+───────────────────────────────────────────────────────────────────── */
+.kanban-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));  /* equal, never shrink */
+  gap: 12px;
+  align-items: start;   /* columns don't stretch to match tallest */
+  width: 100%;
+}
+.kanban-col {
+  min-height: 120px;
+  border-radius: var(--r);
+  border: 2px dashed transparent;
+  transition: border-color 0.15s, background 0.15s;
+  /* NO overflow:hidden — let column grow naturally */
+  min-width: 0;         /* prevent grid blowout */
+}
+.kanban-col.drag-over { border-color: var(--brd2); background: var(--bg2); }
 
-/* ── Kanban task cards — unified design (My Tasks & All Tasks) ──────── */
+.col-header {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txt3);
+  padding-bottom: 8px;
+  border-bottom: 0.5px solid var(--brd);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.col-count {
+  background: var(--bg2);
+  color: var(--txt3);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.col-empty {
+  font-size: 12px;
+  color: var(--txt3);
+  text-align: center;
+  padding: 24px 8px;
+  border: 0.5px dashed var(--brd);
+  border-radius: var(--r);
+}
+
+/* ── Kanban task cards — unified design ────────────────────────────
+   Cards always fill 100% of column width. Text wraps, never overflows.
+───────────────────────────────────────────────────────────────────── */
 .kanban-card {
+  width: 100%;                 /* fill column — never wider */
+  box-sizing: border-box;
   background: var(--bg);
   border: 0.5px solid var(--brd);
   border-radius: var(--r);
@@ -131,6 +178,7 @@ body { font-family:'Inter',sans-serif; font-size:14px; color:var(--txt); backgro
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   user-select: none;
+  min-width: 0;               /* prevent overflow in grid cell */
 }
 .kanban-card:hover {
   border-color: var(--brd2);
@@ -144,27 +192,34 @@ body { font-family:'Inter',sans-serif; font-size:14px; color:var(--txt); backgro
   opacity: 0.4;
 }
 
-/* Task name — prominent */
+/* Task name — prominent, wraps naturally */
 .kc-title {
   font-size: 13px;
   font-weight: 500;
   color: var(--txt);
-  line-height: 1.4;
+  line-height: 1.45;
   margin-bottom: 7px;
+  word-break: break-word;    /* long words wrap, never overflow */
+  overflow-wrap: break-word;
 }
 
-/* Chips row: project | type | subtask progress */
+/* Chips row — wrap onto next line if needed */
 .kc-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 6px;
+  min-width: 0;
 }
 .kc-chip {
   font-size: 10px;
-  padding: 1px 7px;
+  padding: 2px 7px;
   border-radius: 20px;
   font-weight: 500;
+  /* Allow chips to shrink and truncate if column is very narrow */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .kc-chip-project {
@@ -189,7 +244,7 @@ body { font-family:'Inter',sans-serif; font-size:14px; color:var(--txt); backgro
   color: #6aadff;
 }
 
-/* Owner — small, muted, at the bottom */
+/* Owner — small, muted, truncates if too long */
 .kc-owner {
   font-size: 10px;
   color: var(--txt3);
@@ -197,6 +252,7 @@ body { font-family:'Inter',sans-serif; font-size:14px; color:var(--txt); backgro
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  width: 100%;
 }
 
 /* Stats */
