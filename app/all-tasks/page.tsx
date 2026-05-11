@@ -12,7 +12,6 @@ const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
 const DOT_CLR: Record<string,string> = {
   'Not Started':'#aaa','In Progress':'#378ADD','On-Hold':'#EF9F27','Completed':'#639922'
 }
-const SORT_OPTIONS = ['Project name','Start date','Task no'] as const
 
 export default function AllTasks() {
   const router = useRouter()
@@ -23,7 +22,6 @@ export default function AllTasks() {
   const [sf,          setSf]          = useState('All')
   const [pf,          setPf]          = useState('All')
   const [af,          setAf]          = useState('All')
-  const [sortBy,      setSortBy]      = useState<typeof SORT_OPTIONS[number]>('Project name')
   const [view,        setView]        = useState<'list'|'kanban'>('list')
   const [collTask,    setCollTask]    = useState<Record<string,boolean>>({})
   const [allExpanded, setAllExpanded] = useState(true)
@@ -40,7 +38,7 @@ export default function AllTasks() {
       ])
       setTasks(t.data||[])
       setSubtasks(s.data||[])
-      setProjects([...new Set((t.data||[]).map((x:any)=>x.project_name).filter(Boolean))] as string[])
+      setProjects([...new Set((t.data||[]).map((x:any)=>x.project_name).filter(Boolean))].sort() as string[])
     }
     load()
   },[])
@@ -49,28 +47,19 @@ export default function AllTasks() {
     <AppShell title="All Tasks"><div className="alert alert-error">Access denied — Managers and Admins only.</div></AppShell>
   )
 
-  // All unique assignees for filter
   const assignees = [...new Set(
     tasks.flatMap(t => (t.owner||'').split(',').map((o:string) => o.trim()).filter(Boolean))
-  )]
+  )].sort()
 
   let filtered = tasks
   if (sf!=='All') filtered = filtered.filter(t => t.status===sf)
   if (pf!=='All') filtered = filtered.filter(t => t.project_name===pf)
   if (af!=='All') filtered = filtered.filter(t => (t.owner||'').includes(af))
 
-  const sortTasks = (arr: any[]) => [...arr].sort((a, b) => {
-    if (sortBy === 'Start date') return (a.start_date||'').localeCompare(b.start_date||'')
-    if (sortBy === 'Task no')    return (a.id||'').localeCompare(b.id||'')
-    return (a.topic||'').localeCompare(b.topic||'')
-  })
-
+  // Group by project, sorted A-Z
   const grouped: Record<string,any[]> = {}
   filtered.forEach(t => { const p=t.project_name||'No Project'; grouped[p]=(grouped[p]||[]).concat(t) })
-
-  let groupEntries = Object.entries(grouped)
-  if (sortBy === 'Task no')           groupEntries = groupEntries.sort((a,b) => b[1].length - a[1].length)
-  else if (sortBy === 'Project name') groupEntries = groupEntries.sort((a,b) => a[0].localeCompare(b[0]))
+  const groupEntries = Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]))
 
   const toggleAll = () => {
     const next = !allExpanded
@@ -82,16 +71,13 @@ export default function AllTasks() {
 
   const today = new Date(); today.setHours(0,0,0,0)
 
-  // ── Shared kanban card — identical to My Tasks ────────────────────
   const KanbanCard = ({ task }: { task: any }) => {
     const subs     = subtasks.filter(s => s.parent_task_id === task.id)
     const doneSubs = subs.filter(s => s.status === 'Completed').length
     const isOver   = task.end_date && new Date(task.end_date) < today && task.status !== 'Completed'
     return (
-      <div
-        className={`kanban-card${isOver ? ' kanban-card-overdue' : ''}`}
-        onClick={() => router.push(`/tasks/${task.id}`)}
-      >
+      <div className={`kanban-card${isOver?' kanban-card-overdue':''}`}
+        onClick={() => router.push(`/tasks/${task.id}`)}>
         <div className="kc-title">{task.topic}</div>
         <div className="kc-chips">
           {task.project_name && <span className="kc-chip kc-chip-project">{task.project_name}</span>}
@@ -106,7 +92,6 @@ export default function AllTasks() {
   return (
     <AppShell title="All Tasks">
       <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-        {/* List-only: status filter hidden in kanban since columns = stages */}
         {view === 'list' && (
           <select className="form-select" style={{width:150}} value={sf} onChange={e=>setSf(e.target.value)}>
             <option value="All">All Status</option>
@@ -121,9 +106,6 @@ export default function AllTasks() {
           <option value="All">All Assignees</option>
           {assignees.map(a=><option key={a}>{a}</option>)}
         </select>
-        <select className="form-select" style={{width:165}} value={sortBy} onChange={e=>setSortBy(e.target.value as any)}>
-          {SORT_OPTIONS.map(s=><option key={s}>Sort: {s}</option>)}
-        </select>
 
         {view === 'list' && (
           <button className="btn btn-sm" onClick={toggleAll} style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -137,7 +119,7 @@ export default function AllTasks() {
           <button className={view==='kanban'?'btn btn-primary btn-sm':'btn btn-sm'} onClick={()=>setView('kanban')} title="Kanban view"><Columns size={15}/></button>
         </div>
         <div style={{fontSize:12,color:'var(--txt3)'}}>{filtered.length} tasks</div>
-        <Link href="/tasks/create" className="btn btn-primary btn-sm">+ Create Task</Link>
+        <Link href="/tasks/create" className="btn btn-primary btn-sm" style={{marginLeft:'auto'}}>+ Create Task</Link>
       </div>
 
       {/* LIST VIEW */}
@@ -151,7 +133,7 @@ export default function AllTasks() {
                 <div style={{fontSize:12,color:'var(--txt3)'}}>{ptasks.length} task{ptasks.length!==1?'s':''}</div>
               </div>
               <div style={{padding:'8px 16px 12px 16px'}}>
-                {sortTasks(ptasks).map(t=>{
+                {ptasks.map(t=>{
                   const subs = subtasks.filter(s=>s.parent_task_id===t.id)
                   const taskOpen = !collTask[t.id]
                   return (
@@ -192,7 +174,7 @@ export default function AllTasks() {
         </>
       )}
 
-      {/* KANBAN VIEW — status filter hidden, project + assignee filters apply */}
+      {/* KANBAN VIEW — project + assignee filters apply, status filter hidden */}
       {view === 'kanban' && (
         <div className="kanban-grid">
           {STATUSES.map(status => {
@@ -206,10 +188,7 @@ export default function AllTasks() {
                   <div style={{ width:8, height:8, borderRadius:'50%', background: DOT_CLR[status] }}/>
                   {status}<span className="col-count">{group.length}</span>
                 </div>
-                {group.length === 0
-                  ? <div className="col-empty">No tasks</div>
-                  : group.map(t => <KanbanCard key={t.id} task={t}/>)
-                }
+                {group.length === 0 ? <div className="col-empty">No tasks</div> : group.map(t => <KanbanCard key={t.id} task={t}/>)}
               </div>
             )
           })}
