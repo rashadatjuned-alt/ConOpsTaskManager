@@ -216,7 +216,7 @@ function Sidebar({ user, unreadCount }: { user: any; unreadCount: number }) {
     <>
       <div className="sidebar">
         <div className="sidebar-logo">
-          <span style={{ fontSize: 18 }}>⬛</span>
+          <TacticalGridIcon size={26} />
           ConOps Tasker
         </div>
 
