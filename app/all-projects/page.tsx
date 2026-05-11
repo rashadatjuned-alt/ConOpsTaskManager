@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { StatusPill, StatusDot } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, Trash2, Plus, Info, X, Users, Calendar, Clock } from 'lucide-react'
+import { ChevronRight, Trash2, Plus, Info, X, Users, Calendar, Clock, Search } from 'lucide-react'
 import Link from 'next/link'
 
 // ─── Project Info Modal ───────────────────────────────────────────────────────
@@ -16,12 +16,10 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
   const done       = projTasks.filter(t => t.status === 'Completed').length
   const pct        = projTasks.length ? Math.round(done / projTasks.length * 100) : 0
 
-  // Members: resolve from proj.members array of user IDs
   const members = (proj.members || [])
     .map((id: string) => allUsers.find((u: any) => u.id === id))
     .filter(Boolean)
 
-  // Duration
   const startDate = proj.start_date || projTasks.map((t:any)=>t.start_date).filter(Boolean).sort()[0]
   const endDate   = proj.end_date   || projTasks.map((t:any)=>t.end_date).filter(Boolean).sort().reverse()[0]
   let duration = '—'
@@ -42,13 +40,12 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
   }
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)',
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)',
       display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ background:'var(--bg)', borderRadius:'var(--rl)', width:480,
-        maxHeight:'85vh', overflow:'auto', boxShadow:'0 8px 32px rgba(0,0,0,0.18)' }}>
+        maxHeight:'85vh', overflow:'auto', boxShadow:'0 8px 32px rgba(0,0,0,0.3)' }}>
 
-        {/* Header strip */}
         <div style={{ background: proj.color_code||'#378ADD', borderRadius:'var(--rl) var(--rl) 0 0',
           padding:'20px 24px 16px', position:'relative' }}>
           <button onClick={onClose}
@@ -61,7 +58,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
           <div style={{ fontSize:12, color:'rgba(255,255,255,0.8)' }}>
             {projTasks.length} task{projTasks.length!==1?'s':''} · {pct}% complete
           </div>
-          {/* Mini progress bar */}
           <div style={{ height:4, background:'rgba(255,255,255,0.3)', borderRadius:2,
             marginTop:10, overflow:'hidden' }}>
             <div style={{ width:`${pct}%`, height:'100%', background:'#fff', borderRadius:2 }}/>
@@ -69,8 +65,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
         </div>
 
         <div style={{ padding:'20px 24px' }}>
-
-          {/* Description */}
           {proj.description && (
             <div style={{ marginBottom:20 }}>
               <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase',
@@ -79,7 +73,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
             </div>
           )}
 
-          {/* Dates + Duration row */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:20 }}>
             {[
               { icon:<Calendar size={14}/>, label:'Start Date', val: startDate||'—' },
@@ -97,7 +90,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
             ))}
           </div>
 
-          {/* Task status breakdown */}
           <div style={{ marginBottom:20 }}>
             <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase',
               letterSpacing:'0.06em', color:'var(--txt3)', marginBottom:10 }}>Task Breakdown</div>
@@ -117,7 +109,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: {
             </div>
           </div>
 
-          {/* Team members */}
           <div>
             <div style={{ fontSize:11, fontWeight:600, textTransform:'uppercase',
               letterSpacing:'0.06em', color:'var(--txt3)', marginBottom:10,
@@ -169,12 +160,11 @@ export default function AllProjects() {
   const router = useRouter()
   const [projects,  setProjects]  = useState<any[]>([])
   const [tasks,     setTasks]     = useState<any[]>([])
-  const [subtasks,  setSubtasks]  = useState<any[]>([])
   const [allUsers,  setAllUsers]  = useState<any[]>([])
   const [myRole,    setMyRole]    = useState('')
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({})
-  const [collTask,  setCollTask]  = useState<Record<string,boolean>>({})
   const [infoProj,  setInfoProj]  = useState<any|null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -182,15 +172,15 @@ export default function AllProjects() {
       if (!session) return
       const { data: u } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
       setMyRole(u?.role || '')
-      const [p, t, s, us] = await Promise.all([
+      
+      // Note: Removed Subtasks fetch to optimize loading since they are not rendered
+      const [p, t, us] = await Promise.all([
         supabase.from('Projects').select('*').order('created_at'),
         supabase.from('Tasks').select('*').order('end_date'),
-        supabase.from('Subtasks').select('*'),
         supabase.from('Users').select('id,full_name,email,role'),
       ])
       setProjects(p.data || [])
       setTasks(t.data || [])
-      setSubtasks(s.data || [])
       setAllUsers(us.data || [])
     }
     load()
@@ -205,28 +195,24 @@ export default function AllProjects() {
   )
 
   const deleteProject = async (proj: any) => {
-    if (!confirm(`Delete project "${proj.name}"? All tasks will remain but lose their project.`)) return
+    if (!confirm(`Delete project "${proj.name}"?`)) return
     await supabase.from('Projects').delete().eq('id', proj.id)
     setProjects(prev => prev.filter(p => p.id !== proj.id))
   }
 
   const deleteTask = async (taskId: string, topic: string) => {
     if (!confirm(`Delete task "${topic}"?`)) return
-    await supabase.from('Subtasks').delete().eq('parent_task_id', taskId)
+    await supabase.from('Subtasks').delete().eq('parent_task_id', taskId) // Clean up DB even if not rendering
     await supabase.from('Tasks').delete().eq('id', taskId)
     setTasks(prev => prev.filter(t => t.id !== taskId))
-    setSubtasks(prev => prev.filter(s => s.parent_task_id !== taskId))
   }
 
-  const deleteSubtask = async (subId: string, topic: string) => {
-    if (!confirm(`Delete subtask "${topic}"?`)) return
-    await supabase.from('Subtasks').delete().eq('id', subId)
-    setSubtasks(prev => prev.filter(s => s.id !== subId))
-  }
+  const filteredProjects = projects.filter(proj => 
+    proj.name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   return (
     <AppShell title="All Projects">
-      {/* Info modal */}
       {infoProj && (
         <ProjectInfoModal
           proj={infoProj} tasks={tasks} allUsers={allUsers}
@@ -234,134 +220,155 @@ export default function AllProjects() {
         />
       )}
 
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-        <div style={{ fontSize:12, color:'var(--txt3)' }}>{projects.length} project{projects.length!==1?'s':''}</div>
-        <Link href="/projects/create" className="btn btn-primary btn-sm"><Plus size={13}/> New Project</Link>
+      {/* Top Controls */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+        <div style={{ position: 'relative', width: '300px' }}>
+          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--txt3)' }} />
+          <input 
+            type="text" 
+            placeholder="Search projects..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ width: '100%', padding: '8px 12px 8px 34px', borderRadius: 'var(--r)', border: '1px solid var(--brd)', background: 'var(--bg2)', color: 'var(--txt)' }}
+          />
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ fontSize:13, color:'var(--txt3)' }}>{filteredProjects.length} projects</div>
+          <Link href="/projects/create" className="btn btn-primary btn-sm" style={{ padding: '8px 16px', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <Plus size={14}/> New Project
+          </Link>
+        </div>
       </div>
 
-      {projects.length === 0 && (
-        <div className="empty-state"><div style={{ fontSize:32 }}>📁</div><div style={{ marginTop:8 }}>No projects yet.</div></div>
+      {filteredProjects.length === 0 && (
+        <div className="empty-state">No projects found.</div>
       )}
 
-      {projects.map(proj => {
-        const ptasks = tasks.filter(t => t.project_name === proj.name)
-        const done   = ptasks.filter(t => t.status === 'Completed').length
-        const pct    = ptasks.length ? Math.round(done / ptasks.length * 100) : 0
-        const isOpen = !collapsed[proj.id]
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {filteredProjects.map(proj => {
+          const ptasks = tasks.filter(t => t.project_name === proj.name)
+          const done   = ptasks.filter(t => t.status === 'Completed').length
+          const pct    = ptasks.length ? Math.round(done / ptasks.length * 100) : 0
+          const isOpen = !collapsed[proj.id]
 
-        return (
-          <div key={proj.id} className="proj-card">
-            {/* Project header row */}
-            <div className="proj-header">
-              <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, cursor:'pointer' }}
-                onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}>
-                <ChevronRight size={14} color="var(--txt3)"
-                  style={{ transform: isOpen?'rotate(90deg)':'', transition:'transform 0.2s', flexShrink:0 }}/>
-                <div className="proj-dot" style={{ background: proj.color_code||'#378ADD' }}/>
-                <div className="proj-name">{proj.name}</div>
-                <div className="proj-meta">{ptasks.length} task{ptasks.length!==1?'s':''}</div>
-                <div style={{ fontSize:12, color:'var(--txt3)' }}>{pct}%</div>
-                <div className="prog-bar" style={{ width:60, marginTop:0 }}>
-                  <div className="prog-fill" style={{ width:`${pct}%`, background: proj.color_code||'#378ADD' }}/>
+          return (
+            <div key={proj.id} style={{ border: '1px solid var(--brd)', borderRadius: 'var(--rl)', background: 'var(--bg)', overflow: 'hidden' }}>
+              
+              {/* Project Header Row */}
+              <div 
+                style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: isOpen ? 'var(--bg2)' : 'transparent', transition: 'background 0.2s' }}
+                onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}
+              >
+                {/* Left side: Chevron & Title */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <ChevronRight size={18} color="var(--txt3)" style={{ transform: isOpen ? 'rotate(90deg)' : '', transition: 'transform 0.2s' }}/>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: proj.color_code || '#378ADD' }}/>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--txt)' }}>{proj.name}</div>
+                  <div style={{ fontSize: 13, color: 'var(--txt3)', marginLeft: 8 }}>{ptasks.length} task{ptasks.length !== 1 ? 's' : ''}</div>
+                </div>
+
+                {/* Right side: Progress Bar & Action Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                  {/* Progress Tracker */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 140 }}>
+                    <span style={{ fontSize: 13, color: 'var(--txt3)', fontWeight: 500, minWidth: 32 }}>{pct}%</span>
+                    <div style={{ flex: 1, height: 6, background: 'var(--brd)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: proj.color_code || '#378ADD', borderRadius: 3, transition: 'width 0.3s ease' }}/>
+                    </div>
+                  </div>
+
+                  {/* Buttons */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); setInfoProj(proj) }}
+                      style={{ background: 'none', border: '1px solid var(--brd)', borderRadius: '50%', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--txt2)', cursor: 'pointer' }}
+                      title="Project Information"
+                    >
+                      <Info size={14}/>
+                    </button>
+                    <Link 
+                      href="/tasks/create" 
+                      onClick={e => e.stopPropagation()}
+                      style={{ background: 'none', border: '1px solid var(--brd)', borderRadius: '50%', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--txt2)', cursor: 'pointer' }}
+                      title="Add Task"
+                    >
+                      <Plus size={14}/>
+                    </Link>
+                    {canDelete && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); deleteProject(proj); }}
+                        style={{ background: 'none', border: '1px solid transparent', borderRadius: '50%', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', cursor: 'pointer' }}
+                        title="Delete Project"
+                      >
+                        <Trash2 size={14}/>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Action buttons */}
-              <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-                {/* Info button */}
-                <button
-                  onClick={e => { e.stopPropagation(); setInfoProj(proj) }}
-                  title="Project info"
-                  style={{ background:'none', border:'0.5px solid var(--brd2)', borderRadius:'var(--r)',
-                    cursor:'pointer', color:'var(--txt3)', display:'flex', alignItems:'center',
-                    justifyContent:'center', width:28, height:28, transition:'all 0.15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background='var(--bg2)'; e.currentTarget.style.color='var(--txt)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background='none'; e.currentTarget.style.color='var(--txt3)' }}>
-                  <Info size={13}/>
-                </button>
-                <Link href="/tasks/create" className="btn btn-sm" title="Add task">
-                  <Plus size={12}/>
-                </Link>
-                {canDelete && (
-                  <button onClick={() => deleteProject(proj)} title="Delete project"
-                    style={{ background:'none', border:'none', cursor:'pointer',
-                      color:'#cc3333', display:'flex', padding:4 }}>
-                    <Trash2 size={14}/>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Task list */}
-            {isOpen && (
-              <div style={{ paddingLeft:22, paddingRight:16, paddingBottom:10 }}>
-                <div style={{ borderTop:'0.5px solid var(--brd)', marginBottom:8 }}/>
-                {ptasks.length === 0
-                  ? <div style={{ fontSize:13, color:'var(--txt3)', padding:'4px 0' }}>No tasks yet.</div>
-                  : ptasks.map(t => {
-                      const subs    = subtasks.filter(s => s.parent_task_id === t.id)
-                      const taskOpen = !collTask[t.id]
-                      return (
-                        <div key={t.id}>
-                          <div className="task-row" style={{ marginBottom: subs.length&&taskOpen ? 3 : 6 }}>
-                            {subs.length > 0 && (
-                              <ChevronRight size={12} color="var(--txt3)"
-                                style={{ transform: taskOpen?'rotate(90deg)':'', transition:'transform 0.2s',
-                                  cursor:'pointer', flexShrink:0 }}
-                                onClick={e => { e.stopPropagation(); setCollTask(c => ({ ...c, [t.id]: !c[t.id] })) }}/>
-                            )}
-                            {subs.length === 0 && <div style={{ width:12, flexShrink:0 }}/>}
+              {/* Collapsible Main Tasks List (NO Subtasks) */}
+              {isOpen && (
+                <div style={{ padding: '12px 20px', borderTop: '1px solid var(--brd)' }}>
+                  {ptasks.length === 0 ? (
+                    <div style={{ fontSize: 13, color: 'var(--txt3)', padding: '8px 0', textAlign: 'center' }}>No tasks assigned to this project yet.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {ptasks.map(t => (
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg2)', borderRadius: 'var(--r)', border: '1px solid var(--brd)' }}>
+                          
+                          {/* Task Name & Dot */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
                             <StatusDot status={t.status}/>
-                            <div className="task-name" style={{ flex:1, cursor:'pointer' }}
-                              onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</div>
-                            <div className="task-meta">
-                              <span>{t.owner}</span>
-                              <span>{t.end_date}</span>
+                            <div 
+                              style={{ fontSize: 14, fontWeight: 500, color: 'var(--txt)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                              onClick={() => router.push(`/tasks/${t.id}`)}
+                            >
+                              {t.topic}
                             </div>
-                            {(t.tags||[]).map((tag:string) =>
-                              <span key={tag} className="pill pill-tag" style={{ fontSize:10 }}>{tag}</span>
-                            )}
-                            <StatusPill status={t.status}/>
-                            <button onClick={() => router.push(`/tasks/${t.id}`)} className="btn btn-sm"
-                              style={{ padding:'2px 6px', fontSize:11 }}>Edit</button>
-                            {canDelete && (
-                              <button onClick={() => deleteTask(t.id, t.topic)}
-                                style={{ background:'none', border:'none', cursor:'pointer',
-                                  color:'#cc3333', display:'flex', padding:4 }}>
-                                <Trash2 size={13}/>
-                              </button>
-                            )}
                           </div>
 
-                          {subs.length > 0 && taskOpen && (
-                            <div style={{ paddingLeft:28, marginBottom:6 }}>
-                              {subs.map(s => (
-                                <div key={s.id} className="sub-row"
-                                  style={{ border:'0.5px solid var(--brd)', borderRadius:'var(--r)', marginBottom:3 }}>
-                                  <span style={{ color:'var(--txt3)', fontSize:12 }}>↳</span>
-                                  <span style={{ flex:1 }}>{s.topic}</span>
-                                  <span style={{ fontSize:11, color:'var(--txt3)' }}>{s.start_date} → {s.end_date}</span>
-                                  <StatusPill status={s.status}/>
-                                  {canDelete && (
-                                    <button onClick={() => deleteSubtask(s.id, s.topic)}
-                                      style={{ background:'none', border:'none', cursor:'pointer',
-                                        color:'#cc3333', display:'flex', padding:2 }}>
-                                      <Trash2 size={12}/>
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
+                          {/* Task Dates, Status & Actions */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0 }}>
+                            <div style={{ fontSize: 13, color: 'var(--txt2)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                               <Calendar size={13} color="var(--txt3)" />
+                               <span>{t.start_date || 'TBD'} <span style={{ color: 'var(--txt3)', margin: '0 4px' }}>→</span> {t.end_date || 'TBD'}</span>
                             </div>
-                          )}
+
+                            <div style={{ width: 100, display: 'flex', justifyContent: 'flex-end' }}>
+                               <StatusPill status={t.status}/>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderLeft: '1px solid var(--brd)', paddingLeft: 16 }}>
+                              <button 
+                                onClick={() => router.push(`/tasks/${t.id}`)} 
+                                style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 'var(--r)', padding: '4px 10px', fontSize: 12, color: 'var(--txt)', cursor: 'pointer' }}
+                              >
+                                Edit
+                              </button>
+                              {canDelete && (
+                                <button 
+                                  onClick={() => deleteTask(t.id, t.topic)}
+                                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', padding: 4 }}
+                                >
+                                  <Trash2 size={14}/>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
                         </div>
-                      )
-                    })
-                }
-              </div>
-            )}
-          </div>
-        )
-      })}
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+          )
+        })}
+      </div>
     </AppShell>
   )
 }
