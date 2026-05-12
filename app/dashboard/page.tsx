@@ -59,15 +59,17 @@ export default function Dashboard() {
     <AppShell title="Personal Dashboard">
       <div className="metrics-grid">
         {cards.map(c => (
-          <div key={c.id} className="metric-widget" onClick={() => router.push('/my-tasks')}>
-            <div className="widget-icon" style={{ color: c.color }}>{c.icon}</div>
-            <div className="widget-value">{c.count}</div>
+          <div 
+            key={c.id} 
+            className="metric-widget" 
+            onClick={() => c.count > 0 && router.push('/my-tasks')}
+            style={{ opacity: c.count > 0 ? 1 : 0.6, cursor: c.count > 0 ? 'pointer' : 'default' }}
+          >
+            <div className="widget-header">
+              <div className="widget-icon" style={{ color: c.color }}>{c.icon}</div>
+              <div className="widget-value">{c.count}</div>
+            </div>
             <div className="widget-label">{c.id}</div>
-            
-            {/* Conditional bottom indicator line for important cards */}
-            {(c.id === 'In Progress' || c.id === 'Due This Week') && c.count > 0 && (
-              <div className="widget-indicator" style={{ background: c.color }} />
-            )}
           </div>
         ))}
       </div>
@@ -76,55 +78,48 @@ export default function Dashboard() {
         .metrics-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: 20px;
+          gap: 16px;
         }
 
         .metric-widget {
           background: var(--card-bg);
           border: 1px solid var(--border);
-          border-radius: 16px;
-          padding: 24px;
-          cursor: pointer;
-          position: relative;
-          overflow: hidden;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+          border-radius: 12px;
+          padding: 20px;
+          transition: background 0.2s, border-color 0.2s;
         }
 
         .metric-widget:hover {
-          transform: translateY(-4px);
+          background: var(--nav-hover);
           border-color: var(--txt-label);
-          box-shadow: 0 10px 20px -10px var(--accent-glow);
         }
 
-        .widget-icon {
-          margin-bottom: 16px;
-          opacity: 0.9;
-        }
-
-        .widget-value {
-          font-size: 36px;
-          font-weight: 900;
-          color: var(--txt-main);
-          line-height: 1;
+        .widget-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
           margin-bottom: 8px;
         }
 
-        .widget-label {
-          font-size: 11px;
-          color: var(--txt-muted);
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
+        .widget-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
-        .widget-indicator {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 3px;
-          opacity: 0.8;
+        .widget-value {
+          font-size: 28px;
+          font-weight: 800;
+          color: var(--txt-main);
+          line-height: 1;
+        }
+
+        .widget-label {
+          font-size: 10px;
+          color: var(--txt-muted);
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
       `}</style>
     </AppShell>
