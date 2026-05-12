@@ -1,15 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "aged-haze-c8fa",
-  "main": ".open-next/worker.js",
   "compatibility_date": "2026-05-12",
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
-  },
+  // This tells Cloudflare where to find the final build
+  "pages_build_output_dir": ".open-next",
   "observability": {
     "enabled": true
   }
