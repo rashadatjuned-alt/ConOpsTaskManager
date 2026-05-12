@@ -5,7 +5,7 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  // This is the CRITICAL line Cloudflare is asking for:
+  // THIS IS THE LINE CLOUDFLARE IS DEMANDING:
   "pages_build_output_dir": ".open-next",
   "observability": {
     "enabled": true
