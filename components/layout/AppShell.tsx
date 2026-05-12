@@ -4,15 +4,8 @@ import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { 
-  LayoutDashboard, 
-  CheckSquare, 
-  Briefcase, 
-  BarChart3, 
-  LogOut, 
-  Layers,
-  Lock,
-  Sun,
-  Moon
+  LayoutDashboard, CheckSquare, Briefcase, BarChart3, 
+  LogOut, Layers, Lock, Sun, Moon 
 } from 'lucide-react'
 
 export default function AppShell({ children, title }: { children: React.ReactNode, title: string }) {
@@ -45,11 +38,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-      
-      <aside style={{ 
-        width: '260px', background: '#090909', borderRight: '1px solid #1a1a1a', 
-        display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100
-      }}>
+      <aside style={{ width: '260px', background: '#090909', borderRight: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 100 }}>
         <div style={{ padding: '32px 24px', marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, background: 'linear-gradient(135deg, #378ADD, #1B5299)', borderRadius: '10px', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:900, fontSize:18 }}>C</div>
@@ -68,7 +57,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
               <div className="nav-label" style={{ marginTop: '28px' }}>Oversight</div>
               <Link href="/all-projects" className={`nav-link ${isActive('/all-projects') ? 'active' : ''}`}><Layers size={18} /> All Projects</Link>
               <Link href="/all-tasks" className={`nav-link ${isActive('/all-tasks') ? 'active' : ''}`}><CheckSquare size={18} /> Global Tasks</Link>
-              {/* IMPORTANT: Ensure 'href' below matches your folder name exactly */}
+              {/* FIXED LINK: This matches your app/workload folder */}
               <Link href="/workload" className={`nav-link ${isActive('/workload') ? 'active' : ''}`}><BarChart3 size={18} /> Workload Oversight</Link>
             </>
           )}
@@ -76,7 +65,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
 
         <div style={{ padding: '20px', background: '#050505', borderTop: '1px solid #1a1a1a' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, padding: '0 4px' }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1a1a1a', border: '1px solid #333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#378ADD', fontWeight: 800 }}>{me?.full_name?.slice(0,2).toUpperCase()}</div>
+            <div style={{ width: 40, height: 40, borderRadius: '12px', background: '#111', border: '1px solid #333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#378ADD', fontWeight: 800 }}>{me?.full_name?.slice(0,2).toUpperCase()}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{me?.full_name}</div>
               <div style={{ fontSize: 10, color: '#666', fontWeight: 800, textTransform: 'uppercase' }}>{me?.role}</div>
@@ -84,9 +73,9 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setIsDark(!isDark)} className="util-btn" title="Toggle Theme">{isDark ? <Sun size={16} /> : <Moon size={16} />}</button>
-            <button onClick={() => router.push('/settings/password')} className="util-btn" title="Security"><Lock size={16} /></button>
-            <button onClick={handleLogout} className="util-btn logout-hover" style={{ flex: 1, gap: 8, display: 'flex', justifyContent: 'center' }} title="Log Out">
+            <button onClick={() => setIsDark(!isDark)} className="util-btn">{isDark ? <Sun size={16} /> : <Moon size={16} />}</button>
+            <button onClick={() => router.push('/settings/password')} className="util-btn"><Lock size={16} /></button>
+            <button onClick={handleLogout} className="util-btn logout-hover" style={{ flex: 1, gap: 8, display: 'flex', justifyContent: 'center' }}>
               <LogOut size={16} /> <span style={{ fontSize: 11, fontWeight: 700 }}>SIGN OUT</span>
             </button>
           </div>
