@@ -41,90 +41,81 @@ export default function AppShell({ children, title }: { children: React.ReactNod
   const isManagerial = me?.role === 'Manager' || me?.role === 'Admin'
   const isActive = (path: string) => pathname === path
 
-  if (loading) return <div style={{ background: '#000', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333' }}>Loading Secure Session...</div>
+  if (loading) return <div style={{ background: '#000', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333' }}>Loading Workspace...</div>
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
       
-      {/* ─── SIDEBAR ─── */}
-      <aside className="executive-sidebar">
+      {/* ─── REDESIGNED SIDEBAR ─── */}
+      <aside className="sidebar">
         
-        {/* BRANDING: Logo next to Title */}
-        <div className="brand-section">
-          <div className="brand-wrapper">
-            <div className="logo-square">C</div>
-            <div className="brand-text">
-              ConOps <span>Tasker</span>
-            </div>
-          </div>
+        {/* Brand Area */}
+        <div className="brand-container">
+          <div className="logo-sq">C</div>
+          <div className="brand-name">ConOps <span>Tasker</span></div>
         </div>
 
-        {/* NAVIGATION */}
-        <nav className="nav-stack">
-          <div className="section-label">General</div>
-          <Link href="/dashboard" className={`nav-link-new ${isActive('/dashboard') ? 'active' : ''}`}>
-            <LayoutDashboard size={18} /> Dashboard
+        {/* Navigation */}
+        <nav className="nav-body">
+          <div className="nav-label">General</div>
+          <Link href="/dashboard" className={`nav-item ${isActive('/dashboard') ? 'active' : ''}`}>
+            <LayoutDashboard size={18} /> <span>Dashboard</span>
           </Link>
-          <Link href="/my-tasks" className={`nav-link-new ${isActive('/my-tasks') ? 'active' : ''}`}>
-            <CheckSquare size={18} /> My Tasks
+          <Link href="/my-tasks" className={`nav-item ${isActive('/my-tasks') ? 'active' : ''}`}>
+            <CheckSquare size={18} /> <span>My Tasks</span>
           </Link>
-          <Link href="/my-projects" className={`nav-link-new ${isActive('/my-projects') ? 'active' : ''}`}>
-            <Briefcase size={18} /> My Projects
+          <Link href="/my-projects" className={`nav-item ${isActive('/my-projects') ? 'active' : ''}`}>
+            <Briefcase size={18} /> <span>My Projects</span>
           </Link>
 
           {isManagerial && (
             <>
-              <div className="section-label" style={{ marginTop: '28px' }}>Oversight</div>
-              <Link href="/all-projects" className={`nav-link-new ${isActive('/all-projects') ? 'active' : ''}`}>
-                <Layers size={18} /> All Projects
+              <div className="nav-label" style={{ marginTop: '24px' }}>Oversight</div>
+              <Link href="/all-projects" className={`nav-item ${isActive('/all-projects') ? 'active' : ''}`}>
+                <Layers size={18} /> <span>All Projects</span>
               </Link>
-              <Link href="/all-tasks" className={`nav-link-new ${isActive('/all-tasks') ? 'active' : ''}`}>
-                <CheckSquare size={18} /> Global Tasks
+              <Link href="/all-tasks" className={`nav-item ${isActive('/all-tasks') ? 'active' : ''}`}>
+                <CheckSquare size={18} /> <span>Global Tasks</span>
               </Link>
-              <Link href="/workload" className={`nav-link-new ${isActive('/workload') ? 'active' : ''}`}>
-                <BarChart3 size={18} /> Workload Oversight
+              <Link href="/workload" className={`nav-item ${isActive('/workload') ? 'active' : ''}`}>
+                <BarChart3 size={18} /> <span>Workload Oversight</span>
               </Link>
             </>
           )}
         </nav>
 
-        {/* ─── UTILITY TRAY ─── */}
+        {/* Footer Area */}
         <div className="sidebar-footer">
-          <div className="user-info">
-            <div className="avatar-squircle">{me?.full_name?.slice(0,2).toUpperCase()}</div>
-            <div className="user-meta">
-              <span className="name">{me?.full_name}</span>
-              <span className="role">{me?.role}</span>
+          <div className="profile-strip">
+            <div className="profile-avatar">{me?.full_name?.slice(0,2).toUpperCase()}</div>
+            <div className="profile-text">
+              <div className="p-name">{me?.full_name}</div>
+              <div className="p-role">{me?.role}</div>
             </div>
           </div>
 
-          <div className="action-tray">
-            <button onClick={() => setIsDark(!isDark)} className="tray-btn" title="Theme">
+          <div className="utility-bar">
+            <button onClick={() => setIsDark(!isDark)} className="u-btn" title="Theme">
               {isDark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <button onClick={() => router.push('/settings/password')} className="tray-btn" title="Security">
+            <button onClick={() => router.push('/settings/password')} className="u-btn" title="Password">
               <Lock size={16} />
             </button>
-            <button onClick={handleLogout} className="tray-btn logout" title="Sign Out">
-              <LogOut size={16} />
-              <span>LOG OUT</span>
+            <button onClick={handleLogout} className="u-btn logout" title="Sign Out">
+              <LogOut size={16} /> <span>LOG OUT</span>
             </button>
           </div>
         </div>
       </aside>
 
-      {/* ─── MAIN CONTENT ─── */}
-      <main className="main-viewport">
-        <header className="page-header">
-          <h1>{title}</h1>
-        </header>
-        <section className="content-container">
-          {children}
-        </section>
+      {/* Main Viewport */}
+      <main style={{ marginLeft: '260px', flex: 1, padding: '40px 50px', background: 'var(--bg)' }}>
+        <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#fff', marginBottom: '32px' }}>{title}</h1>
+        {children}
       </main>
 
       <style jsx>{`
-        .executive-sidebar {
+        .sidebar {
           width: 260px;
           background: #080808;
           border-right: 1px solid #1a1a1a;
@@ -135,48 +126,41 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           z-index: 100;
         }
 
-        .brand-section {
+        .brand-container {
           padding: 32px 24px;
-        }
-
-        .brand-wrapper {
           display: flex;
           align-items: center;
           gap: 12px;
         }
 
-        .logo-square {
-          width: 32px;
-          height: 32px;
+        .logo-sq {
+          width: 34px;
+          height: 34px;
           background: linear-gradient(135deg, #378ADD, #1B5299);
-          border-radius: 8px;
+          border-radius: 10px;
           display: flex;
           align-items: center;
           justify-content: center;
           color: white;
           font-weight: 900;
-          font-size: 16px;
-          box-shadow: 0 4px 10px rgba(55, 138, 221, 0.2);
+          font-size: 18px;
         }
 
-        .brand-text {
-          font-size: 18px;
+        .brand-name {
+          font-size: 19px;
           font-weight: 900;
           color: #fff;
           letter-spacing: -0.5px;
-          white-space: nowrap;
         }
 
-        .brand-text span {
-          color: #378ADD;
-        }
+        .brand-name span { color: #378ADD; }
 
-        .nav-stack {
+        .nav-body {
           flex: 1;
           padding: 0 16px;
         }
 
-        .section-label {
+        .nav-label {
           padding: 10px 12px;
           font-size: 10px;
           font-weight: 800;
@@ -185,7 +169,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           letter-spacing: 1.5px;
         }
 
-        .nav-link-new {
+        .nav-item {
           display: flex;
           align-items: center;
           gap: 12px;
@@ -195,19 +179,31 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           font-size: 14px;
           font-weight: 600;
           border-radius: 12px;
-          transition: all 0.2s ease;
+          transition: 0.2s;
           margin-bottom: 2px;
         }
 
-        .nav-link-new:hover {
+        .nav-item:hover {
           color: #fff;
           background: #111;
         }
 
-        .nav-link-new.active {
+        .nav-item.active {
           color: #fff;
           background: #141414;
           box-shadow: inset 0 0 0 1px #222;
+          position: relative;
+        }
+
+        .nav-item.active::after {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 12px;
+          bottom: 12px;
+          width: 3px;
+          background: #378ADD;
+          border-radius: 0 4px 4px 0;
         }
 
         .sidebar-footer {
@@ -216,15 +212,15 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           border-top: 1px solid #1a1a1a;
         }
 
-        .user-info {
+        .profile-strip {
           display: flex;
           align-items: center;
           gap: 12px;
-          margin-bottom: 20px;
+          margin-bottom: 16px;
           padding: 0 4px;
         }
 
-        .avatar-squircle {
+        .profile-avatar {
           width: 38px;
           height: 38px;
           border-radius: 10px;
@@ -238,79 +234,38 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           font-size: 13px;
         }
 
-        .user-meta {
-          display: flex;
-          flex-direction: column;
-          min-width: 0;
-        }
+        .profile-text { min-width: 0; }
+        .p-name { font-size: 13px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .p-role { font-size: 9px; color: #555; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
 
-        .name {
-          font-size: 13px;
-          font-weight: 700;
-          color: #fff;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
+        .utility-bar { display: flex; gap: 8px; }
 
-        .role {
-          font-size: 9px;
-          color: #555;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .action-tray {
-          display: flex;
-          gap: 8px;
-        }
-
-        .tray-btn {
+        .u-btn {
           background: #111;
           border: 1px solid #222;
           color: #444;
           padding: 10px;
           border-radius: 10px;
           cursor: pointer;
-          transition: all 0.2s ease;
+          transition: 0.2s;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
-        .tray-btn:hover {
-          background: #1a1a1a;
-          color: #fff;
-          border-color: #333;
-        }
+        .u-btn:hover { background: #1a1a1a; color: #fff; border-color: #333; }
 
-        .logout {
+        .u-btn.logout {
           flex: 1;
           gap: 8px;
           font-size: 10px;
           font-weight: 800;
         }
 
-        .logout:hover {
+        .u-btn.logout:hover {
           color: #ef4444;
           background: rgba(239, 68, 68, 0.05);
           border-color: rgba(239, 68, 68, 0.15);
-        }
-
-        .main-viewport {
-          marginLeft: 260px;
-          flex: 1;
-          padding: 40px 50px;
-          background: var(--bg);
-        }
-
-        .page-header h1 {
-          fontSize: 26px;
-          fontWeight: 800;
-          color: #fff;
-          letterSpacing: -0.5px;
-          marginBottom: 32px;
         }
       `}</style>
     </div>
