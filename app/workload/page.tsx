@@ -1,544 +1,364 @@
 'use client'
 export const dynamic = 'force-dynamic'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { StatusPill } from '@/components/ui/StatusPill'
-import { Users, AlertTriangle, CheckCircle2, BarChart2, Settings, X } from 'lucide-react'
+import { StatusDot } from '@/components/ui/StatusPill'
+import { 
+  Users, CheckCircle2, ListTodo, Clock, AlertCircle, X, 
+  Settings, ArrowLeft, History, Hourglass, CalendarDays, 
+  Filter, LayoutGrid, Activity, BarChart3 
+} from 'lucide-react'
 
 const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
-const STATUS_CLR: Record<string,string> = {
-  'Not Started':'#B4B2A9','In Progress':'#378ADD','On-Hold':'#EF9F27','Completed':'#639922'
-}
 const AVATAR_BG = ['#E6F1FB','#EAF3DE','#EEEDFE','#FAEEDA','#FAECE7','#E1F5EE']
 const AVATAR_CL = ['#0C447C','#27500A','#3C3489','#633806','#712B13','#085041']
 
-function initials(name: string) {
-  const p = (name||'??').trim().split(' ')
-  return p.length >= 2 ? (p[0][0]+p[p.length-1][0]).toUpperCase() : name.slice(0,2).toUpperCase()
+function ini(name: string) {
+  const p = (name||'?').trim().split(' ')
+  return p.length >= 2 ? (p[0][0]+p[p.length - 1][0]).toUpperCase() : name.slice(0,2).toUpperCase()
 }
 
 type Tab = 'overview' | 'heatmap' | 'capacity'
-
 interface Thresholds { normal: number; heavy: number; overload: number }
 
 export default function Workload() {
   const router = useRouter()
-  const [users,    setUsers]    = useState<any[]>([])
-  const [tasks,    setTasks]    = useState<any[]>([])
+  const [users, setUsers] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
   const [subtasks, setSubtasks] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
-  const [myRole,   setMyRole]   = useState('')
-  const [loading,  setLoading]  = useState(true)
-  const [tab,      setTab]      = useState<Tab>('overview')
+  const [myRole, setMyRole] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<Tab>('overview')
   const [projFilter, setProjFilter] = useState('All')
-  const [focusUser,  setFocusUser]  = useState<string|null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showModal, setShowModal] = useState<string | null>(null)
   const [thresholds, setThresholds] = useState<Thresholds>({ normal: 3, heavy: 6, overload: 10 })
   const [draftT, setDraftT] = useState<Thresholds>({ normal: 3, heavy: 6, overload: 10 })
 
   useEffect(() => {
     const saved = localStorage.getItem('workload-thresholds')
-    if (saved) { const t = JSON.parse(saved); setThresholds(t); setDraftT(t) }
-  }, [])
-
-  useEffect(() => {
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      setThresholds(parsed)
+      setDraftT(parsed)
+    }
+    
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const { data: me } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
       setMyRole(me?.role || '')
+
       const [u, t, s, p] = await Promise.all([
         supabase.from('Users').select('id,full_name,email,role').order('full_name'),
         supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Subtasks').select('*'),
         supabase.from('Projects').select('*').order('name'),
       ])
-      setUsers(u.data || [])
-      setTasks(t.data || [])
-      setSubtasks(s.data || [])
-      setProjects(p.data || [])
+      setUsers(u.data || []); setTasks(t.data || []); setSubtasks(s.data || []); setProjects(p.data || []);
       setLoading(false)
     }
     load()
   }, [])
 
   const today = new Date(); today.setHours(0,0,0,0)
+  const nextWeek = new Date(); nextWeek.setDate(today.getDate() + 7)
+  const thisMonth = today.getMonth(); const thisYear = today.getFullYear()
 
-  const saveThresholds = () => {
-    if (draftT.normal >= draftT.heavy || draftT.heavy >= draftT.overload) {
-      alert('Thresholds must be in order: Normal < Heavy < Overload'); return
-    }
-    setThresholds(draftT)
-    localStorage.setItem('workload-thresholds', JSON.stringify(draftT))
-    setShowSettings(false)
-  }
+  // ─── DATA SEGREGATION LOGIC ───
+  const memberStats = useMemo(() => {
+    return users.filter(u => u.role !== 'Admin').map((u, idx) => {
+      const name = u.full_name || u.email
+      const uTasks = tasks.filter(t => 
+        (t.owner||'').toLowerCase().includes(name.toLowerCase()) || 
+        (t.assignees || []).some((a:string) => a.toLowerCase().includes(name.toLowerCase()))
+      )
+      const filtered = projFilter === 'All' ? uTasks : uTasks.filter(t => t.project_name === projFilter)
+      
+      const counts = {
+        'Not Started': filtered.filter(t => t.status === 'Not Started').length,
+        'In Progress': filtered.filter(t => t.status === 'In Progress').length,
+        'On-Hold': filtered.filter(t => t.status === 'On-Hold').length,
+        'Completed': filtered.filter(t => t.status === 'Completed').length,
+      }
 
-  const getLoad = (total: number) =>
-    total >= thresholds.overload ? 'overloaded'
-    : total >= thresholds.heavy  ? 'heavy'
-    : total >= thresholds.normal ? 'moderate'
-    : 'light'
+      const userSubtasks = subtasks.filter(s => (s.owner||'').toLowerCase().includes(name.toLowerCase()))
+      const openTasks = filtered.filter(t => t.status !== 'Completed').length
 
-  const LOAD_STYLE: Record<string,{label:string;bg:string;color:string}> = {
-    light:      { label:'Light',      bg:'#EAF3DE', color:'#3B6D11' },
-    moderate:   { label:'Moderate',   bg:'#E6F1FB', color:'#185FA5' },
-    heavy:      { label:'Heavy',      bg:'#FAEEDA', color:'#854F0B' },
-    overloaded: { label:'Overloaded', bg:'#FCEBEB', color:'#A32D2D' },
-  }
-
-  if (!loading && myRole === 'Team Member') {
-    return <AppShell title="Workload"><div className="alert alert-error">Access denied — Managers and Admins only.</div></AppShell>
-  }
-
-  const selectedProject = projects.find(p => p.name === projFilter)
-  const filteredUsers = projFilter === 'All'
-    ? users.filter(u => u.role !== 'Admin')
-    : users.filter(u => {
-        if (u.role === 'Admin') return false
-        if (selectedProject?.members?.includes(u.id)) return true
-        const name = u.full_name || u.email
-        return tasks.some(t => t.project_name === projFilter &&
-          (t.owner||'').toLowerCase().includes(name.toLowerCase()))
-      })
-
-  const memberStats = filteredUsers.map((u, idx) => {
-    const name = u.full_name || u.email
-    const allMyTasks = tasks.filter(t =>
-      (t.owner||'').toLowerCase().includes(name.toLowerCase()) ||
-      (t.owner||'').toLowerCase().includes((u.email||'').toLowerCase())
-    )
-    const filteredTasks = projFilter === 'All' ? allMyTasks
-      : allMyTasks.filter(t => t.project_name === projFilter)
-    const mySubs = subtasks.filter(s =>
-      (s.owner||'').toLowerCase().includes(name.toLowerCase()) ||
-      (s.owner||'').toLowerCase().includes((u.email||'').toLowerCase())
-    )
-    const overdueList = filteredTasks.filter(t => {
-      if (!t.end_date || t.status === 'Completed') return false
-      const e = new Date(t.end_date); e.setHours(0,0,0,0); return e < today
+      return {
+        ...u, name, total: filtered.length, counts, 
+        subCount: userSubtasks.length,
+        openTasks,
+        load: openTasks >= thresholds.overload ? 'overload' : openTasks >= thresholds.heavy ? 'heavy' : openTasks >= thresholds.normal ? 'moderate' : 'light',
+        color: AVATAR_BG[idx % 6], textColor: AVATAR_CL[idx % 6]
+      }
     })
-    const byStatus: Record<string,number> = {}
-    STATUSES.forEach(s => { byStatus[s] = filteredTasks.filter(t => t.status === s).length })
-    const projSet = [...new Set(allMyTasks.map((t:any) => t.project_name).filter(Boolean))]
-    const total = filteredTasks.length
-    const done  = byStatus['Completed'] || 0
-    const pct   = total ? Math.round(done/total*100) : 0
-    return {
-      ...u, name, idx, tasks: filteredTasks, allTasks: allMyTasks,
-      subtasks: mySubs, overdue: overdueList,
-      byStatus, projSet, total, done, pct,
-      load: getLoad(total),
-      color: AVATAR_BG[idx%AVATAR_BG.length],
-      textColor: AVATAR_CL[idx%AVATAR_CL.length],
-    }
-  })
+  }, [users, tasks, subtasks, projFilter, thresholds])
 
-  const totalOverdue   = memberStats.reduce((a,m) => a+m.overdue.length, 0)
-  const totalAssigned  = memberStats.reduce((a,m) => a+m.total, 0)
-  const teamCompletion = totalAssigned ? Math.round(memberStats.reduce((a,m)=>a+m.done,0)/totalAssigned*100) : 0
-  const focusedMember  = focusUser ? memberStats.find(m => m.id === focusUser) : null
+  // Global metrics for the top cards
+  const globalMetrics = useMemo(() => {
+    const fTasks = projFilter === 'All' ? tasks : tasks.filter(t => t.project_name === projFilter)
+    const mTasks = fTasks.map(t => ({ ...t, dateObj: t.end_date ? new Date(t.end_date) : null }))
+    return {
+      'Not Started': mTasks.filter(t => t.status === 'Not Started'),
+      'In Progress': mTasks.filter(t => t.status === 'In Progress'),
+      'On-Hold': mTasks.filter(t => t.status === 'On-Hold'),
+      'Completed': mTasks.filter(t => t.status === 'Completed'),
+      'Overdue': mTasks.filter(t => t.dateObj && t.dateObj < today && t.status !== 'Completed'),
+      'Due This Week': mTasks.filter(t => t.dateObj && t.dateObj >= today && t.dateObj <= nextWeek && t.status !== 'Completed'),
+      'Due This Month': mTasks.filter(t => t.dateObj && t.dateObj.getMonth() === thisMonth && t.dateObj.getFullYear() === thisYear && t.status !== 'Completed'),
+    }
+  }, [tasks, projFilter, today])
+
+  if (!loading && myRole === 'Team Member') return <AppShell title="Workload"><div className="alert alert-error">Access Denied. Oversight tools are for Managers only.</div></AppShell>
+  if (loading) return <AppShell title="Workload">Loading Capacity Data...</AppShell>
 
   return (
-    <AppShell title="Team Workload">
-
-      {/* Settings modal */}
-      {showSettings && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
-          display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
-          <div className="card" style={{ width:400, padding:28 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
-              <div style={{ fontSize:15, fontWeight:500 }}>Workload Thresholds</div>
-              <button onClick={() => setShowSettings(false)}
-                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--txt3)' }}>
-                <X size={16}/>
-              </button>
-            </div>
-            <div style={{ fontSize:12, color:'var(--txt3)', marginBottom:16 }}>
-              Set how many tasks define each load level for your team.
-            </div>
-
-            {[
-              { key:'normal',   label:'Normal threshold', desc:'Below this = Light', color:'#3B6D11' },
-              { key:'heavy',    label:'Heavy threshold',  desc:'At or above = Heavy', color:'#854F0B' },
-              { key:'overload', label:'Overload threshold', desc:'At or above = Overloaded', color:'#A32D2D' },
-            ].map(({ key, label, desc, color }) => (
-              <div key={key} className="form-group">
-                <label className="form-label">{label}</label>
-                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <input type="range" min={1} max={20} step={1}
-                    value={draftT[key as keyof Thresholds]}
-                    onChange={e => setDraftT(prev => ({ ...prev, [key]: Number(e.target.value) }))}
-                    style={{ flex:1 }}/>
-                  <span style={{ fontSize:16, fontWeight:600, color, minWidth:28, textAlign:'center' }}>
-                    {draftT[key as keyof Thresholds]}
-                  </span>
-                </div>
-                <div style={{ fontSize:11, color:'var(--txt3)', marginTop:2 }}>{desc}</div>
-              </div>
-            ))}
-
-            {/* Preview */}
-            <div style={{ background:'var(--bg2)', borderRadius:'var(--r)', padding:'10px 12px', marginBottom:16 }}>
-              <div style={{ fontSize:11, color:'var(--txt3)', marginBottom:6 }}>Preview:</div>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                {[
-                  { label:`0–${draftT.normal-1} tasks`, bg:'#EAF3DE', color:'#3B6D11', text:'Light' },
-                  { label:`${draftT.normal}–${draftT.heavy-1} tasks`, bg:'#E6F1FB', color:'#185FA5', text:'Moderate' },
-                  { label:`${draftT.heavy}–${draftT.overload-1} tasks`, bg:'#FAEEDA', color:'#854F0B', text:'Heavy' },
-                  { label:`${draftT.overload}+ tasks`, bg:'#FCEBEB', color:'#A32D2D', text:'Overloaded' },
-                ].map(({ label, bg, color, text }) => (
-                  <div key={text} style={{ fontSize:10, padding:'3px 8px', borderRadius:20,
-                    background:bg, color }}>
-                    {text}: {label}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-              <button className="btn" onClick={() => setShowSettings(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveThresholds}>Save Settings</button>
-            </div>
+    <AppShell title="Workload Oversight">
+      
+      {/* ─── HEADER ─── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => router.push('/dashboard')} className="tv-btn" style={{ padding: '8px' }} title="Back to Dashboard"><ArrowLeft size={18}/></button>
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Team Workload</h2>
+            <p style={{ color: 'var(--txt3)', fontSize: 13 }}>Segregated analysis of bandwidth and status-wise distribution.</p>
           </div>
         </div>
-      )}
+        <button className="tv-btn" onClick={() => setShowSettings(true)}><Settings size={14} style={{ marginRight: 6 }}/> Load Thresholds</button>
+      </div>
 
-      {/* Top bar */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, flexWrap:'wrap' }}>
-        <select className="form-select" style={{ width:200 }} value={projFilter}
-          onChange={e => { setProjFilter(e.target.value); setFocusUser(null) }}>
-          <option value="All">All Projects</option>
-          {projects.map(p => <option key={p.id}>{p.name}</option>)}
-        </select>
-        {projFilter !== 'All' && (
-          <span style={{ fontSize:12, color:'var(--txt3)' }}>
-            {filteredUsers.length} member{filteredUsers.length!==1?'s':''} in project
-          </span>
-        )}
-        <div style={{ marginLeft:'auto', display:'flex', gap:4, alignItems:'center' }}>
-          <button className="btn btn-sm" onClick={() => setShowSettings(true)}
-            style={{ display:'flex', alignItems:'center', gap:5 }}>
-            <Settings size={13}/> Settings
-          </button>
-          {(['overview','heatmap','capacity'] as Tab[]).map(t => (
-            <button key={t} className={tab===t?'btn btn-primary btn-sm':'btn btn-sm'}
-              onClick={() => { setTab(t); setFocusUser(null) }}
-              style={{ textTransform:'capitalize' }}>{t}</button>
+      {/* ─── TOOLBAR ─── */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)', border: '1px solid var(--brd)', borderRadius: 8, padding: '4px 10px' }}>
+          <Filter size={14} color="var(--txt3)" />
+          <select style={{ background: 'transparent', border: 'none', color: 'var(--txt)', fontSize: 13, outline: 'none', cursor: 'pointer' }} value={projFilter} onChange={e => setProjFilter(e.target.value)}>
+            <option value="All">All Projects</option>
+            {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+          </select>
+        </div>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', background: 'var(--bg2)', padding: 4, borderRadius: 8, border: '1px solid var(--brd)' }}>
+          {[
+            { id: 'overview', icon: <LayoutGrid size={14}/>, label: 'Overview' },
+            { id: 'heatmap', icon: <Activity size={14}/>, label: 'Heatmap' },
+            { id: 'capacity', icon: <Users size={14}/>, label: 'Capacity' }
+          ].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id as Tab)} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, background: tab === t.id ? 'var(--bg)' : 'transparent', color: tab === t.id ? 'var(--txt)' : 'var(--txt3)', transition: '0.2s' }}>
+              {t.icon} {t.label.toUpperCase()}
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16 }}>
-        <div className="stat-card">
-          <div style={{ marginBottom:8 }}><Users size={15} color="#185FA5"/></div>
-          <div className="stat-value blue" style={{ fontSize:26 }}>{loading?'—':filteredUsers.length}</div>
-          <div className="stat-label">{projFilter==='All'?'Team members':'Members in project'}</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ marginBottom:8 }}><BarChart2 size={15} color="#854F0B"/></div>
-          <div className="stat-value amber" style={{ fontSize:26 }}>{loading?'—':totalAssigned}</div>
-          <div className="stat-label">Total tasks</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ marginBottom:8 }}><AlertTriangle size={15} color="#cc3333"/></div>
-          <div className="stat-value red" style={{ fontSize:26 }}>{loading?'—':totalOverdue}</div>
-          <div className="stat-label">Overdue tasks</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ marginBottom:8 }}><CheckCircle2 size={15} color="#3B6D11"/></div>
-          <div className="stat-value green" style={{ fontSize:26 }}>{loading?'—':`${teamCompletion}%`}</div>
-          <div className="stat-label">Team completion</div>
-        </div>
+      {/* ─── TOP METRICS (Clickable Modals) ─── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
+        {[
+          { id: 'Not Started', color: '#aaa', icon: <ListTodo size={18}/> },
+          { id: 'In Progress', color: '#378ADD', icon: <Clock size={18}/> },
+          { id: 'On-Hold', color: '#EF9F27', icon: <AlertCircle size={18}/> },
+          { id: 'Completed', color: '#639922', icon: <CheckCircle2 size={18}/> }
+        ].map(card => {
+          const count = globalMetrics[card.id as keyof typeof globalMetrics].length
+          return (
+            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 16, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6, transition: '0.2s' }}>
+              <div style={{ color: card.color, marginBottom: 8 }}>{card.icon}</div>
+              <div style={{ fontSize: 24, fontWeight: 800 }}>{count}</div>
+              <div style={{ fontSize: 11, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase' }}>{card.id}</div>
+            </div>
+          )
+        })}
       </div>
 
-      {loading && <div style={{ padding:40, textAlign:'center', color:'var(--txt3)' }}>Loading...</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
+        {[
+          { id: 'Overdue', color: '#ef4444', icon: <History size={18}/> },
+          { id: 'Due This Week', color: '#8b5cf6', icon: <Hourglass size={18}/> },
+          { id: 'Due This Month', color: '#ec4899', icon: <CalendarDays size={18}/> }
+        ].map(card => {
+          const count = globalMetrics[card.id as keyof typeof globalMetrics].length
+          return (
+            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 16, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6, borderLeft: count > 0 ? `4px solid ${card.color}` : '1px solid var(--brd)' }}>
+              <div style={{ color: card.color, marginBottom: 8 }}>{card.icon}</div>
+              <div style={{ fontSize: 24, fontWeight: 800 }}>{count}</div>
+              <div style={{ fontSize: 11, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase' }}>{card.id}</div>
+            </div>
+          )
+        })}
+      </div>
 
-      {/* ─── OVERVIEW ─── */}
-      {!loading && tab==='overview' && !focusedMember && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
-          {memberStats.map(m => {
-            const ls = LOAD_STYLE[m.load]
-            return (
-              <div key={m.id} className="card" style={{ cursor:'pointer' }}
-                onClick={() => setFocusUser(m.id)}
-                onMouseEnter={e => (e.currentTarget.style.boxShadow='0 2px 10px rgba(0,0,0,0.08)')}
-                onMouseLeave={e => (e.currentTarget.style.boxShadow='')}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-                  <div style={{ width:36, height:36, borderRadius:'50%',
-                    background:m.color, color:m.textColor,
-                    display:'flex', alignItems:'center', justifyContent:'center',
-                    fontSize:13, fontWeight:500, flexShrink:0 }}>
-                    {initials(m.name)}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:500, color:'var(--txt)',
-                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.name}</div>
-                    <div style={{ fontSize:11, color:'var(--txt3)' }}>{m.role}</div>
-                  </div>
-                  <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, fontWeight:500,
-                    background: m.overdue.length>0?'#FCEBEB':ls.bg,
-                    color: m.overdue.length>0?'#A32D2D':ls.color, whiteSpace:'nowrap' }}>
-                    {m.overdue.length>0 ? `⚠ ${m.overdue.length} overdue` : ls.label}
-                  </span>
+      {/* ─── OVERVIEW TAB ─── */}
+      {tab === 'overview' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          {memberStats.map(m => (
+            <div key={m.id} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: '50%', background: m.color, color: m.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>{ini(m.name)}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--txt3)' }}>{m.role}</div>
                 </div>
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:4, marginBottom:12 }}>
-                  {[
-                    { label:'Tasks',    val:m.total },
-                    { label:'Subtasks', val:m.subtasks.length },
-                    { label:'Projects', val:m.projSet.length },
-                    { label:'Done',     val:`${m.pct}%`,
-                      color: m.pct===100?'#3B6D11':m.pct>=50?'#854F0B':'#A32D2D' },
-                  ].map(({ label, val, color }) => (
-                    <div key={label} style={{ textAlign:'center', padding:'6px 4px',
-                      background:'var(--bg2)', borderRadius:'var(--r)' }}>
-                      <div style={{ fontSize:14, fontWeight:500, color:color||'var(--txt)' }}>{val}</div>
-                      <div style={{ fontSize:10, color:'var(--txt3)' }}>{label}</div>
-                    </div>
-                  ))}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: m.load === 'overload' ? '#ef4444' : m.load === 'heavy' ? '#EF9F27' : '#639922', textTransform: 'uppercase' }}>{m.load}</div>
+                  <div style={{ fontSize: 10, color: 'var(--txt3)' }}>{m.subCount} sub-tasks</div>
                 </div>
-                {STATUSES.map(s => {
-                  const cnt = m.byStatus[s]||0
-                  const pct = m.total ? Math.round(cnt/m.total*100) : 0
-                  return (
-                    <div key={s} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
-                      <div style={{ fontSize:11, color:'var(--txt3)', width:76, flexShrink:0 }}>{s}</div>
-                      <div style={{ flex:1, height:5, background:'var(--bg2)', borderRadius:3, overflow:'hidden' }}>
-                        <div style={{ width:`${pct}%`, height:'100%', background:STATUS_CLR[s], borderRadius:3 }}/>
-                      </div>
-                      <div style={{ fontSize:11, color:'var(--txt3)', width:16, textAlign:'right' }}>{cnt}</div>
-                    </div>
-                  )
-                })}
               </div>
-            )
-          })}
-          {memberStats.length===0 && (
-            <div style={{ gridColumn:'1/-1' }} className="empty-state">
-              <div style={{fontSize:32}}>👥</div>
-              <div style={{marginTop:8}}>No members found for this project.</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {STATUSES.map(status => (
+                  <div key={status} style={{ background: 'var(--bg2)', padding: '8px 10px', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--txt2)' }}>
+                      <StatusDot status={status} size={6} /> {status}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>{m.counts[status]}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          )}
+          ))}
         </div>
       )}
 
-      {/* ─── DRILL DOWN ─── */}
-      {!loading && tab==='overview' && focusedMember && (
-        <div>
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
-            <button className="btn btn-sm" onClick={() => setFocusUser(null)}>← Back</button>
-            <div style={{ width:32, height:32, borderRadius:'50%',
-              background:focusedMember.color, color:focusedMember.textColor,
-              display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:500 }}>
-              {initials(focusedMember.name)}
-            </div>
-            <div style={{ fontSize:14, fontWeight:500 }}>{focusedMember.name}</div>
-            <span style={{ fontSize:11, color:'var(--txt3)' }}>{focusedMember.role}</span>
-            <div style={{ marginLeft:'auto', fontSize:12, color:'var(--txt3)' }}>
-              {focusedMember.total} tasks · {focusedMember.subtasks.length} subtasks · {focusedMember.projSet.length} projects
-            </div>
-          </div>
-          {focusedMember.overdue.length>0 && (
-            <div className="alert alert-error" style={{ marginBottom:12 }}>
-              ⚠ {focusedMember.overdue.length} overdue task{focusedMember.overdue.length>1?'s':''}
-            </div>
-          )}
-          {focusedMember.projSet.length===0
-            ? <div className="empty-state"><div style={{fontSize:32}}>📋</div><div style={{marginTop:8}}>No tasks assigned.</div></div>
-            : focusedMember.projSet.map((projName: string) => {
-                const projTasks = focusedMember.tasks.filter((t:any) => t.project_name===projName)
-                if (!projTasks.length) return null
-                const proj = projects.find(p => p.name===projName)
-                return (
-                  <div key={projName} className="card" style={{ padding:0, overflow:'hidden', marginBottom:10 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px',
-                      background:'var(--bg2)', borderBottom:'0.5px solid var(--brd)' }}>
-                      <div className="proj-dot" style={{ background:proj?.color_code||'#378ADD' }}/>
-                      <div style={{ fontSize:13, fontWeight:500, flex:1, color:'var(--txt)' }}>{projName}</div>
-                      <div style={{ fontSize:12, color:'var(--txt3)' }}>{projTasks.length} task{projTasks.length!==1?'s':''}</div>
+      {/* ─── HEATMAP TAB ─── */}
+      {tab === 'heatmap' && (
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg2)', textAlign: 'left' }}>
+                <th style={{ padding: '14px 20px', fontSize: 11, color: 'var(--txt3)', fontWeight: 800 }}>TEAM MEMBER</th>
+                {projects.slice(0, 5).map(p => (
+                  <th key={p.id} style={{ padding: '14px 10px', fontSize: 10, color: 'var(--txt3)', textAlign: 'center', fontWeight: 800 }}>{p.name.toUpperCase()}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {memberStats.map(m => (
+                <tr key={m.id} style={{ borderTop: '1px solid var(--brd)' }}>
+                  <td style={{ padding: '12px 20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 24, height: 24, borderRadius: '50%', background: m.color, color: m.textColor, fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{ini(m.name)}</div>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{m.name}</span>
                     </div>
-                    <div style={{ padding:'8px 16px 12px' }}>
-                      {projTasks.map((t:any) => {
-                        const isOver = t.status!=='Completed' && t.end_date && new Date(t.end_date)<today
-                        const taskSubs = subtasks.filter(s => s.parent_task_id===t.id)
-                        return (
-                          <div key={t.id} className={`task-row ${isOver?'overdue':''}`}
-                            onClick={() => router.push(`/tasks/${t.id}`)}>
-                            <div style={{ width:8, height:8, borderRadius:'50%',
-                              background:STATUS_CLR[t.status]||'#aaa', flexShrink:0 }}/>
-                            <div style={{ flex:1 }}>
-                              <div className="task-name">{t.topic}</div>
-                              <div className="task-meta">
-                                {isOver && <span style={{color:'#cc3333'}}>⚠ Due {t.end_date}</span>}
-                                {!isOver && t.end_date && <span>Due {t.end_date}</span>}
-                                {taskSubs.length>0 && <span>{taskSubs.filter((s:any)=>s.status==='Completed').length}/{taskSubs.length} subtasks</span>}
-                              </div>
-                            </div>
-                            <StatusPill status={t.status}/>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })
-          }
-        </div>
-      )}
-
-      {/* ─── HEATMAP (simplified, no overflow) ─── */}
-      {!loading && tab==='heatmap' && (
-        <div className="card">
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-            <div style={{ fontSize:13, fontWeight:500, color:'var(--txt)' }}>Task load by member & project</div>
-            <div style={{ display:'flex', gap:10, fontSize:11, color:'var(--txt3)', alignItems:'center' }}>
-              {[
-                { bg:'var(--bg2)', border:'0.5px solid var(--brd)', label:'0' },
-                { bg:'#E6F1FB', label:'1–2' },
-                { bg:'#FAEEDA', label:'3–5' },
-                { bg:'#FCEBEB', label:'6+' },
-              ].map(({ bg, border, label }) => (
-                <span key={label} style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ width:16, height:16, borderRadius:3, background:bg,
-                    border:border||'none', display:'inline-block', flexShrink:0 }}/>
-                  {label}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* One row per member — shows top 5 projects to avoid overflow */}
-          {memberStats.map((m, mi) => {
-            const topProjs = projFilter==='All'
-              ? projects.filter(p => m.allTasks.some((t:any) => t.project_name===p.name)).slice(0,5)
-              : projects.filter(p => p.name===projFilter)
-            return (
-              <div key={m.id} style={{ display:'flex', alignItems:'center', gap:10,
-                padding:'10px 0', borderBottom: mi<memberStats.length-1?'0.5px solid var(--brd)':'none' }}>
-                {/* Member */}
-                <div style={{ display:'flex', alignItems:'center', gap:8, width:140, flexShrink:0 }}>
-                  <div style={{ width:28, height:28, borderRadius:'50%',
-                    background:m.color, color:m.textColor,
-                    display:'flex', alignItems:'center', justifyContent:'center',
-                    fontSize:10, fontWeight:500, flexShrink:0 }}>
-                    {initials(m.name)}
-                  </div>
-                  <span style={{ fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.name}</span>
-                </div>
-                {/* Project cells */}
-                <div style={{ flex:1, display:'flex', gap:6, flexWrap:'wrap' }}>
-                  {topProjs.map(p => {
-                    const cnt = m.allTasks.filter((t:any) => t.project_name===p.name).length
-                    const bg  = cnt===0?'var(--bg2)':cnt<=2?'#E6F1FB':cnt<=5?'#FAEEDA':'#FCEBEB'
-                    const cl  = cnt===0?'var(--txt3)':cnt<=2?'#185FA5':cnt<=5?'#854F0B':'#A32D2D'
+                  </td>
+                  {projects.slice(0, 5).map(p => {
+                    const count = tasks.filter(t => t.project_name === p.name && (t.owner||'').includes(m.name)).length
+                    const intensity = count > 5 ? '#FCEBEB' : count > 2 ? '#FAEEDA' : count > 0 ? '#E6F1FB' : 'transparent'
+                    const text = count > 5 ? '#A32D2D' : count > 2 ? '#854F0B' : count > 0 ? '#185FA5' : 'var(--txt3)'
                     return (
-                      <div key={p.id} style={{ display:'flex', flexDirection:'column',
-                        alignItems:'center', gap:3, minWidth:60 }}>
-                        <div style={{ fontSize:9, color:'var(--txt3)', maxWidth:60,
-                          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textAlign:'center' }}>
-                          {p.name}
-                        </div>
-                        <div style={{ width:44, height:28, borderRadius:'var(--r)',
-                          background:bg, color:cl, display:'flex', alignItems:'center',
-                          justifyContent:'center', fontSize:12, fontWeight: cnt>0?500:400 }}>
-                          {cnt||'—'}
-                        </div>
-                      </div>
+                      <td key={p.id} style={{ padding: '4px', textAlign: 'center' }}>
+                        <div style={{ margin: 'auto', width: 36, height: 36, borderRadius: 6, background: intensity, color: text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{count || '0'}</div>
+                      </td>
                     )
                   })}
-                  {projFilter==='All' && projects.filter(p => m.allTasks.some((t:any)=>t.project_name===p.name)).length>5 && (
-                    <div style={{ fontSize:11, color:'var(--txt3)', alignSelf:'flex-end' }}>
-                      +{projects.filter(p => m.allTasks.some((t:any)=>t.project_name===p.name)).length-5} more
-                    </div>
-                  )}
-                </div>
-                {/* Total */}
-                <div style={{ width:48, textAlign:'right', flexShrink:0 }}>
-                  <span style={{ fontSize:13, fontWeight:600,
-                    color: m.load==='overloaded'?'#A32D2D':m.load==='heavy'?'#854F0B':m.load==='moderate'?'#185FA5':'#3B6D11' }}>
-                    {m.total}
-                  </span>
-                  <div style={{ fontSize:10, color:'var(--txt3)' }}>tasks</div>
-                </div>
-              </div>
-            )
-          })}
-          {memberStats.length===0 && (
-            <div style={{ padding:24, textAlign:'center', fontSize:13, color:'var(--txt3)' }}>No members found.</div>
-          )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* ─── CAPACITY ─── */}
-      {!loading && tab==='capacity' && (
-        <div>
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
-            <div style={{ fontSize:12, color:'var(--txt3)' }}>
-              Ranked by open tasks. Current thresholds:
-            </div>
-            {[
-              { label:`Light: 0–${thresholds.normal-1}`, bg:'#EAF3DE', color:'#3B6D11' },
-              { label:`Moderate: ${thresholds.normal}–${thresholds.heavy-1}`, bg:'#E6F1FB', color:'#185FA5' },
-              { label:`Heavy: ${thresholds.heavy}–${thresholds.overload-1}`, bg:'#FAEEDA', color:'#854F0B' },
-              { label:`Overloaded: ${thresholds.overload}+`, bg:'#FCEBEB', color:'#A32D2D' },
-            ].map(({ label, bg, color }) => (
-              <span key={label} style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:bg, color }}>{label}</span>
-            ))}
-          </div>
-          <div className="card" style={{ padding:0, overflow:'hidden' }}>
-            {[...memberStats].sort((a,b)=>b.total-a.total).map((m,i,arr) => {
-              const open    = m.total-(m.byStatus['Completed']||0)
-              const maxOpen = Math.max(...arr.map(x=>x.total-(x.byStatus['Completed']||0)),1)
-              const barPct  = Math.round(open/maxOpen*100)
-              const ls      = LOAD_STYLE[m.load]
-              return (
-                <div key={m.id}
-                  style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 20px',
-                    borderBottom: i<arr.length-1?'0.5px solid var(--brd)':'none',
-                    cursor:'pointer', transition:'background 0.15s' }}
-                  onClick={() => { setTab('overview'); setFocusUser(m.id) }}
-                  onMouseEnter={e => (e.currentTarget.style.background='var(--bg2)')}
-                  onMouseLeave={e => (e.currentTarget.style.background='')}>
-                  <div style={{ width:24, color:'var(--txt3)', fontSize:11, fontWeight:500, textAlign:'right', flexShrink:0 }}>#{i+1}</div>
-                  <div style={{ width:36, height:36, borderRadius:'50%',
-                    background:m.color, color:m.textColor,
-                    display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:500, flexShrink:0 }}>
-                    {initials(m.name)}
-                  </div>
-                  <div style={{ width:140, flexShrink:0 }}>
-                    <div style={{ fontSize:13, fontWeight:500, color:'var(--txt)',
-                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.name}</div>
-                    <div style={{ fontSize:11, color:'var(--txt3)' }}>{m.role}</div>
-                  </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4, fontSize:11, color:'var(--txt3)' }}>
-                      <span>{open} open</span><span>{m.pct}% done</span>
-                    </div>
-                    <div style={{ height:8, background:'var(--bg2)', borderRadius:4, overflow:'hidden' }}>
-                      <div style={{ width:`${barPct}%`, height:'100%', borderRadius:4, transition:'width 0.3s',
-                        background: m.load==='overloaded'?'#E24B4A':m.load==='heavy'?'#EF9F27':
-                          m.load==='moderate'?'#378ADD':'#639922' }}/>
-                    </div>
-                  </div>
-                  <div style={{ display:'flex', gap:14, flexShrink:0, fontSize:12, color:'var(--txt3)' }}>
-                    <span>{m.total} tasks</span>
-                    <span>{m.subtasks.length} subs</span>
-                    <span>{m.projSet.length} proj</span>
-                  </div>
-                  <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, fontWeight:500,
-                    whiteSpace:'nowrap', flexShrink:0,
-                    background: m.overdue.length>0?'#FCEBEB':ls.bg,
-                    color: m.overdue.length>0?'#A32D2D':ls.color }}>
-                    {m.overdue.length>0?`⚠ ${m.overdue.length} overdue`:ls.label}
-                  </span>
+      {/* ─── CAPACITY TAB ─── */}
+      {tab === 'capacity' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {memberStats.sort((a,b) => b.openTasks - a.openTasks).map((m, idx) => (
+            <div key={m.id} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+              <div style={{ width: 24, fontSize: 13, fontWeight: 800, color: 'var(--txt3)', textAlign: 'center' }}>#{idx + 1}</div>
+              <div style={{ width: 200, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: m.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{ini(m.name)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{m.name}</div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 800, color: 'var(--txt3)', marginBottom: 6, textTransform: 'uppercase' }}>
+                  <span>{m.openTasks} Open Tasks</span>
+                  <span>{m.load} bandwidth</span>
                 </div>
-              )
-            })}
-            {memberStats.length===0 && (
-              <div style={{ padding:24, textAlign:'center', fontSize:13, color:'var(--txt3)' }}>No members found.</div>
-            )}
+                <div style={{ height: 8, background: 'var(--bg2)', borderRadius: 10, overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min((m.openTasks / thresholds.overload) * 100, 100)}%`, height: '100%', background: m.load === 'overload' ? '#ef4444' : m.load === 'heavy' ? '#EF9F27' : '#378ADD', transition: 'width 0.4s ease' }} />
+                </div>
+              </div>
+              <div style={{ width: 100, textAlign: 'right' }}>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{m.total}</div>
+                <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase' }}>Lifetime</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ─── TEAM TASK MODAL (DETAIL POP-UP) ─── */}
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setShowModal(null)}>
+          <div style={{ width: '90%', maxWidth: 900, background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--brd)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Team {showModal} Summary</div>
+              <button onClick={() => setShowModal(null)} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><X size={20}/></button>
+            </div>
+            <div style={{ padding: 0, maxHeight: '70vh', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ fontSize: 11, color: 'var(--txt3)', textTransform: 'uppercase', background: 'var(--bg2)' }}>
+                    <th style={{ padding: '14px 20px' }}>Task Title</th>
+                    <th>Project</th>
+                    <th>Sub-task Progress</th>
+                    <th style={{ textAlign: 'right', paddingRight: 20 }}>Members</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalMetrics[showModal as keyof typeof globalMetrics].map(t => {
+                    const subs = subtasks.filter(s => s.parent_task_id === t.id)
+                    const pct = subs.length ? Math.round((subs.filter(s => s.status === 'Completed').length / subs.length) * 100) : (t.status === 'Completed' ? 100 : 0)
+                    return (
+                      <tr key={t.id} style={{ borderBottom: '1px solid var(--brd)', fontSize: 13 }}>
+                        <td style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</td>
+                        <td style={{ color: 'var(--txt2)' }}>{t.project_name}</td>
+                        <td>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ flex: 1, maxWidth: 80, height: 4, background: 'var(--brd)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: 'var(--txt2)' }} /></div>
+                              <span style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 700 }}>{pct}%</span>
+                           </div>
+                        </td>
+                        <td style={{ textAlign: 'right', paddingRight: 20 }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            {[t.owner, ...(t.assignees || [])].filter(Boolean).map((name, i) => (
+                              <div key={i} title={name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg)', marginLeft: -8, cursor: 'default' }}>{ini(name)}</div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── THRESHOLD SETTINGS MODAL ─── */}
+      {showSettings && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
+          <div className="card" style={{ width:400, padding:24 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:20 }}>
+              <div style={{ fontWeight:700, fontSize: 16 }}>Capacity Thresholds</div>
+              <X size={18} cursor="pointer" onClick={() => setShowSettings(false)}/>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 20 }}>Adjust how many active tasks define team bandwidth.</div>
+            {[
+              { k:'normal', l:'Moderate Start', c: '#378ADD' },
+              { k:'heavy', l:'Heavy Start', c: '#EF9F27' },
+              { k:'overload', l:'Overload Start', c: '#ef4444' }
+            ].map(row => (
+              <div key={row.k} style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <label style={{ fontSize:11, fontWeight:800, color:'var(--txt2)', textTransform:'uppercase' }}>{row.l}</label>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: row.c }}>{draftT[row.k as keyof Thresholds]}</span>
+                </div>
+                <input type="range" min="1" max="25" style={{ width:'100%' }} value={draftT[row.k as keyof Thresholds]} onChange={e => setDraftT({...draftT, [row.k]: parseInt(e.target.value)})} />
+              </div>
+            ))}
+            <button className="btn btn-primary" style={{ width:'100%', marginTop:10 }} onClick={() => { setThresholds(draftT); localStorage.setItem('workload-thresholds', JSON.stringify(draftT)); setShowSettings(false); }}>Save Configurations</button>
           </div>
         </div>
       )}
