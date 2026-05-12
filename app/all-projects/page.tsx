@@ -140,4 +140,97 @@ export default function AllProjects() {
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{proj.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--txt3)' }}>({ptasks.length} tasks)</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap
+                <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 120 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, width: 30, color: 'var(--txt3)' }}>{pct}%</span>
+                    <div style={{ flex: 1, height: 6, background: 'var(--brd)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: proj.color_code || '#378ADD' }} /></div>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); setInfoProj(proj) }} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><Info size={16}/></button>
+                </div>
+              </div>
+
+              {isOpen && (
+                <div style={{ padding: '0 0 8px 0' }}>
+                  {ptasks.map(t => {
+                    const tSubs = subtasks.filter(s => s.parent_task_id === t.id)
+                    const tPct = tSubs.length ? Math.round((tSubs.filter(s => s.status === 'Completed').length / tSubs.length) * 100) : (t.status === 'Completed' ? 100 : 0)
+                    const isTaskOpen = !collTask[t.id]
+                    return (
+                      <div key={t.id} style={{ borderTop: '1px solid var(--brd)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 8px 40px', gap: 12 }}>
+                          <div style={{ width: 20 }}>{tSubs.length > 0 && <ChevronRight size={13} style={{ transform: isTaskOpen ? 'rotate(90deg)' : '', cursor: 'pointer' }} onClick={() => setCollTask(c => ({...c, [t.id]: !c[t.id]}))} />}</div>
+                          <div style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                            <div style={{ width: 195, fontSize: 11, color: 'var(--txt3)', textAlign: 'right', paddingRight: 24, whiteSpace: 'nowrap' }}>{t.start_date} <span style={{ color: 'var(--brd)', margin: '0 4px' }}>→</span> {t.end_date}</div>
+                            <div style={{ width: 100, display: 'flex', alignItems: 'center', gap: 8, paddingRight: 20 }}>
+                              <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${tPct}%`, height: '100%', background: 'var(--txt3)' }} /></div>
+                              <span style={{ fontSize: 10, width: 25, color: 'var(--txt3)' }}>{tPct}%</span>
+                            </div>
+                            <div style={{ width: 95 }}><StatusPill status={t.status} /></div>
+                            <div style={{ width: 60, textAlign: 'right' }}><button className="tv-btn" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => router.push(`/tasks/${t.id}`)}>Edit</button></div>
+                          </div>
+                        </div>
+                        {tSubs.length > 0 && isTaskOpen && (
+                          <div>{tSubs.map(s => (
+                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '4px 16px 4px 72px', gap: 12 }}>
+                              <div style={{ flex: 1, fontSize: 12, color: 'var(--txt2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>↳ {s.topic}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                                <div style={{ width: 195, fontSize: 11, color: 'var(--txt3)', textAlign: 'right', paddingRight: 24, whiteSpace: 'nowrap' }}>{s.start_date} <span style={{ color: 'var(--brd)', margin: '0 4px' }}>→</span> {s.end_date}</div>
+                                <div style={{ width: 100, paddingRight: 20 }} />
+                                <div style={{ width: 95 }}><StatusPill status={s.status} /></div>
+                                <div style={{ width: 60 }} />
+                              </div>
+                            </div>
+                          ))}</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })
+      ) : (
+        /* ─── KANBAN VIEW ─── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, alignItems: 'start' }}>
+          {STATUSES.map(status => {
+            const groupTasks = tasks.filter(t => t.status === status && t.project_name.toLowerCase().includes(searchTerm.toLowerCase()))
+            return (
+              <div key={status} style={{ background: 'var(--bg2)', borderRadius: 12, padding: 12, minHeight: '70vh' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '0 4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <StatusDot status={status} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>{status}</span>
+                  </div>
+                  <span style={{ fontSize: 11, background: 'var(--brd)', padding: '2px 8px', borderRadius: 10, color: 'var(--txt3)', fontWeight: 600 }}>{groupTasks.length}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {groupTasks.map(t => {
+                    const proj = projects.find(p => p.name === t.project_name)
+                    return (
+                      <div key={t.id} onClick={() => router.push(`/tasks/${t.id}`)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 8, padding: 12, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: proj?.color_code || '#378ADD' }} />
+                          <span style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase' }}>{t.project_name}</span>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 10, lineHeight: 1.4 }}>{t.topic}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--txt3)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Calendar size={11} /> {t.end_date}
+                          </div>
+                          <StatusPill status={t.status} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {groupTasks.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: 'var(--txt3)', fontSize: 12, border: '1px dashed var(--brd)', borderRadius: 8 }}>No tasks</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </AppShell>
+  )
+}
