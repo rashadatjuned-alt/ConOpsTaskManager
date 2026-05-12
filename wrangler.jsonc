@@ -5,13 +5,11 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  // 1. Tell Wrangler where the generated worker is
   "main": ".open-next/worker.js",
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
-  // 2. Force the CI to use OpenNext instead of the default build
   "build": {
     "command": "npx opennextjs-cloudflare build"
   },
