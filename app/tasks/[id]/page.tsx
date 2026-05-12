@@ -273,10 +273,11 @@ export default function TaskDetail() {
 
   return (
     <AppShell title={task.topic || 'Task Detail'}>
-      {/* ── INJECTED CSS FOR AUTO LIGHT/DARK MODE ── */}
+      {/* ── INJECTED CSS FOR AUTO LIGHT/DARK MODE (RESPECTS APP TOGGLE) ── */}
       <style dangerouslySetInnerHTML={{ __html: `
+        /* LIGHT MODE VARIABLES (DEFAULT) */
         .tv-wrapper {
-          --bg-color: #f9fafb;
+          --bg-color: transparent;
           --card-bg: #ffffff;
           --subtask-bg: #f3f4f6;
           --border-color: #e5e7eb;
@@ -296,30 +297,32 @@ export default function TaskDetail() {
           --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%232563eb%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
           --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%234b5563%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
         }
-        @media (prefers-color-scheme: dark) {
-          .tv-wrapper {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --subtask-bg: #181818;
-            --border-color: #2e2e2e;
-            --text-main: #e5e5e5;
-            --text-muted: #8b8b8b;
-            --text-label: #6b6b6b;
-            --pill-blue-bg: rgba(59, 130, 246, 0.15);
-            --pill-blue-txt: #60a5fa;
-            --pill-gray-bg: rgba(255, 255, 255, 0.05);
-            --pill-gray-txt: #a3a3a3;
-            --btn-bg: #2a2a2a;
-            --btn-hover: #333333;
-            --btn-delete-bg: rgba(239, 68, 68, 0.1);
-            --btn-delete-txt: #ef4444;
-            --btn-delete-hover: rgba(239, 68, 68, 0.2);
-            --shadow-sm: none;
-            --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2360a5fa%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-            --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a3a3a3%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-          }
+        
+        /* DARK MODE VARIABLES (TRIGGERED BY GLOBAL .dark CLASS OR DATA-THEME) */
+        .dark .tv-wrapper, 
+        [data-theme="dark"] .tv-wrapper {
+          --bg-color: transparent;
+          --card-bg: #1e1e1e;
+          --subtask-bg: #181818;
+          --border-color: #2e2e2e;
+          --text-main: #e5e5e5;
+          --text-muted: #8b8b8b;
+          --text-label: #6b6b6b;
+          --pill-blue-bg: rgba(59, 130, 246, 0.15);
+          --pill-blue-txt: #60a5fa;
+          --pill-gray-bg: rgba(255, 255, 255, 0.05);
+          --pill-gray-txt: #a3a3a3;
+          --btn-bg: #2a2a2a;
+          --btn-hover: #333333;
+          --btn-delete-bg: rgba(239, 68, 68, 0.1);
+          --btn-delete-txt: #ef4444;
+          --btn-delete-hover: rgba(239, 68, 68, 0.2);
+          --shadow-sm: none;
+          --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2360a5fa%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+          --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a3a3a3%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
         }
         
+        /* SHARED STYLES */
         .tv-wrapper { color: var(--text-main); font-size: 14px; display: flex; flex-direction: column; gap: 20px; }
         .tv-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 12px; }
         .tv-back-nav { color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 8px; cursor: pointer; background: none; border: none; font-size: 14px; }
@@ -348,8 +351,8 @@ export default function TaskDetail() {
         .tv-val { font-size: 14px; color: var(--text-main); }
         .tv-val-muted { font-size: 14px; color: var(--text-muted); }
         
-        .tv-input { width: 100%; padding: 8px 12px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; }
-        .tv-textarea { width: 100%; padding: 8px 12px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; min-height: 80px; resize: vertical; }
+        .tv-input { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; }
+        .tv-textarea { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; min-height: 80px; resize: vertical; }
         
         .tv-table { width: 100%; border-collapse: collapse; text-align: left; }
         .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
@@ -500,7 +503,6 @@ export default function TaskDetail() {
             <table className="tv-table">
               <thead>
                 <tr>
-                  {/* FIX: Replaced HTML 'width' attribute with React 'style' prop */}
                   <th style={{ width: 50 }}>SL</th>
                   <th>Description</th>
                   <th>Link</th>
@@ -555,7 +557,6 @@ export default function TaskDetail() {
             <table className="tv-table">
               <thead>
                 <tr>
-                  {/* FIX: Replaced HTML 'width' attributes with React 'style' props */}
                   <th style={{ width: 40 }}>SL</th>
                   <th style={{ width: '35%' }}>Title & Description</th>
                   <th>Start Date</th>
