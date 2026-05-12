@@ -34,7 +34,6 @@ export default function MyTasks() {
 
   if (loading) return <AppShell title="My Pipeline">Loading pipeline...</AppShell>
 
-  // Group tasks by status for a Kanban-lite feel
   const groupedTasks = {
     'Active': tasks.filter(t => t.status === 'In Progress' || t.status === 'Not Started'),
     'On Hold': tasks.filter(t => t.status === 'On-Hold'),
@@ -43,10 +42,7 @@ export default function MyTasks() {
 
   return (
     <AppShell title="My Pipeline">
-      
       <div className="pipeline-container">
-        
-        {/* Active Tasks Column */}
         <div className="pipeline-section">
           <h3 className="section-title">Active Work <span>{groupedTasks['Active'].length}</span></h3>
           <div className="task-list">
@@ -66,9 +62,6 @@ export default function MyTasks() {
           </div>
         </div>
 
-        {/* You can replicate the .pipeline-section above for On-Hold or Completed tasks if you want a side-by-side board, 
-            or just stack them vertically as shown below. */}
-            
         <div className="pipeline-section" style={{ marginTop: '32px' }}>
           <h3 className="section-title">Completed <span>{groupedTasks['Completed'].length}</span></h3>
           <div className="task-list" style={{ opacity: 0.7 }}>
@@ -82,96 +75,29 @@ export default function MyTasks() {
             ))}
           </div>
         </div>
-
       </div>
 
       <style jsx>{`
-        .pipeline-container {
-          max-width: 800px;
-        }
-
-        .section-title {
-          font-size: 14px;
-          font-weight: 800;
-          color: var(--txt-main);
-          margin-bottom: 16px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .section-title span {
-          background: var(--border);
-          color: var(--txt-muted);
-          padding: 2px 8px;
-          border-radius: 12px;
-          font-size: 11px;
-        }
-
-        .task-list {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
+        .pipeline-container { max-width: 800px; }
+        .section-title { font-size: 14px; font-weight: 800; color: var(--txt-main); margin-bottom: 16px; display: flex; align-items: center; gap: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .section-title span { background: var(--border); color: var(--txt-muted); padding: 2px 8px; border-radius: 8px; font-size: 11px; }
+        .task-list { display: flex; flex-direction: column; gap: 12px; }
+        
         .task-card {
           background: var(--card-bg);
           border: 1px solid var(--border);
           border-radius: 12px;
-          padding: 16px 20px;
+          padding: 16px;
           cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          transition: background 0.2s, border-color 0.2s;
         }
-
-        .task-card:hover {
-          background: var(--nav-hover);
-          border-color: var(--txt-label);
-          transform: translateX(4px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }
-
-        .task-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 8px;
-        }
-
-        .task-project {
-          font-size: 10px;
-          font-weight: 800;
-          color: var(--accent);
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .task-topic {
-          font-size: 15px;
-          font-weight: 700;
-          color: var(--txt-main);
-          margin-bottom: 12px;
-        }
-
-        .task-footer {
-          display: flex;
-          align-items: center;
-          font-size: 11px;
-          color: var(--txt-muted);
-          font-weight: 600;
-        }
-
-        .empty-state {
-          padding: 24px;
-          text-align: center;
-          background: var(--card-bg);
-          border: 1px dashed var(--border);
-          border-radius: 12px;
-          color: var(--txt-muted);
-          font-size: 13px;
-          font-weight: 600;
-        }
+        .task-card:hover { background: var(--nav-hover); border-color: var(--txt-label); }
+        
+        .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .task-project { font-size: 10px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
+        .task-topic { font-size: 14px; font-weight: 700; color: var(--txt-main); margin-bottom: 12px; }
+        .task-footer { display: flex; align-items: center; font-size: 11px; color: var(--txt-muted); font-weight: 600; }
+        .empty-state { padding: 24px; text-align: center; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 12px; color: var(--txt-muted); font-size: 13px; font-weight: 600; }
       `}</style>
     </AppShell>
   )
