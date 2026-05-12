@@ -1,0 +1,3 @@
+export const production = {"NEXT_PUBLIC_SUPABASE_URL":"https://ncftwgiyphyijcizwriw.supabase.co","NEXT_PUBLIC_SUPABASE_ANON_KEY":"sb_publishable_4b8A8vrOnThMTMyTRZoC_Q_p5FrU4t5"};
+export const development = {};
+export const test = {};

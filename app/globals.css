@@ -13,10 +13,10 @@
   --nav-active-bg: #EAF3DE; --nav-active-txt: #3B6D11;
   
   /* Workload Status Colors - Light Mode */
-  --sl-over: #DC2626;   /* Red */
-  --sl-heavy: #EA580C;  /* Orange */
-  --sl-mod: #0284C7;    /* Blue */
-  --sl-light: #16A34A;  /* Green */
+  --sl-over: #DC2626;   
+  --sl-heavy: #EA580C;  
+  --sl-mod: #0284C7;    
+  --sl-light: #16A34A;  
 }
 
 html[data-theme='dark'] {
@@ -33,23 +33,55 @@ html[data-theme='dark'] {
   --sl-light: #32D74B;
 }
 
-body { font-family:'Inter',sans-serif; background:var(--bg3); color:var(--txt); transition: background 0.2s; }
+body { 
+  font-family: 'Inter', sans-serif; 
+  background: var(--bg3); 
+  color: var(--txt); 
+  transition: background 0.2s; 
+}
 
-/* FIX: Assignee Icon Alignment & Sizing */
+/* ─── ASSIGNEE ICON ALIGNMENT ─── */
 .avatar-mini {
-  width: 24px; height: 24px;
+  width: 24px; 
+  height: 24px;
   background: var(--bg2);
   border: 1px solid var(--brd);
   border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 800; color: #378ADD;
-  flex-shrink: 0; /* Prevents squishing in tables */
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  font-size: 10px; 
+  font-weight: 800; 
+  color: #378ADD;
+  flex-shrink: 0; 
 }
 
-/* Primary Button for Create Actions */
+/* ─── PRIMARY BUTTON ─── */
 .btn-primary-action {
-  background: #3B6D11; color: white; border: none;
-  padding: 8px 16px; border-radius: 6px; font-weight: 700;
-  cursor: pointer; display: flex; align-items: center; gap: 8px;
+  background: #3B6D11; 
+  color: white; 
+  border: none;
+  padding: 8px 16px; 
+  border-radius: 6px; 
+  font-weight: 700;
+  cursor: pointer; 
+  display: flex; 
+  align-items: center; 
+  gap: 8px;
 }
 .btn-primary-action:hover { opacity: 0.9; }
+
+/* ─── ULTIMATE SIDEBAR ALIGNMENT FIX ─── */
+.nav-item, [class*="nav-item"] {
+  display: flex !important;
+  flex-direction: row !important; /* Forces icons to the left of text */
+  align-items: center !important;
+  gap: 12px !important;
+  text-decoration: none !important;
+}
+
+/* Ensures column stacking for the container itself */
+.sidebar nav, aside nav {
+  display: flex !important;
+  flex-direction: column !important;
+}
