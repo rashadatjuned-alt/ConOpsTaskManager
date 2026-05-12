@@ -8,8 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy": "opennextjs-cloudflare build",
-    "preview": "opennextjs-cloudflare build"
+    "cloudflare-build": "opennextjs-cloudflare build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
