@@ -1,9 +1,10 @@
 'use client'
+
 export const dynamic = 'force-dynamic'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, use } from 'react' // Added use hook
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 const COLORS = [
   '#3b82f6','#8b5cf6','#f59e0b','#22c55e',
@@ -11,9 +12,16 @@ const COLORS = [
   '#6366f1','#14b8a6',
 ]
 
-export default function EditProject() {
+interface EditProjectProps {
+  params: Promise<{ id: string }>
+}
+
+export default function EditProject({ params }: EditProjectProps) {
   const router = useRouter()
-  const { id } = useParams<{ id: string }>()
+  
+  // Next.js 16 requirement: Unwrap params using React.use()
+  const resolvedParams = use(params)
+  const id = resolvedParams.id
 
   const [project,     setProject]     = useState<any>(null)
   const [allUsers,    setAllUsers]    = useState<any[]>([])
@@ -41,6 +49,7 @@ export default function EditProject() {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
+      
       const { data: u } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
       setMyRole(u?.role || '')
 
@@ -83,13 +92,11 @@ export default function EditProject() {
     const removedUserObjs = allUsers.filter((u: any) => removed.includes(u.id))
     const removedNames = removedUserObjs.map((u: any) => u.full_name || u.email)
 
-    // Find tasks assigned to removed users
     const affectedTasks = tasks.filter((t: any) => {
       const assignees: string[] = Array.isArray(t.assignees) ? t.assignees : (t.owner ? [t.owner] : [])
       return assignees.some((a: string) => removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase()))
     })
 
-    // Find subtasks assigned to removed users
     const affectedSubs = subtasks.filter((s: any) => {
       const assignees: string[] = Array.isArray(s.assignees) ? s.assignees : (s.owner ? [s.owner] : [])
       return assignees.some((a: string) => removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase()))
@@ -104,7 +111,6 @@ export default function EditProject() {
     if (!name.trim()) { setError('Project name is required.'); return }
     setError('')
 
-    // Show impact warning if removing assignees with tasks
     if (removedUsers.length > 0 && (impactTasks.length > 0 || impactSubs.length > 0) && !showImpact) {
       setShowImpact(true)
       return
@@ -114,7 +120,6 @@ export default function EditProject() {
     try {
       const oldName = project.name
 
-      // 1. Update project
       await supabase.from('Projects').update({
         name: name.trim(),
         description: desc.trim(),
@@ -122,14 +127,12 @@ export default function EditProject() {
         members,
       }).eq('id', id)
 
-      // 2. If name changed, update all tasks referencing this project
       if (name.trim() !== oldName) {
         await supabase.from('Tasks')
           .update({ project_name: name.trim() })
           .eq('project_name', oldName)
       }
 
-      // 3. Remove unassigned users from tasks
       if (removedUsers.length > 0) {
         const removedNames = removedUsers.map((u: any) => u.full_name || u.email)
 
@@ -189,7 +192,6 @@ export default function EditProject() {
         {error   && <div style={S.alertErr}>{error}</div>}
         {success && <div style={S.alertOk}>{success}</div>}
 
-        {/* Impact warning banner */}
         {hasImpact && !showImpact && (
           <div style={S.alertWarn}>
             ⚠️ Removing <strong>{removedUsers.map((u: any) => u.full_name).join(', ')}</strong> will affect{' '}
@@ -200,20 +202,16 @@ export default function EditProject() {
           </div>
         )}
 
-        {/* Project Details */}
         <div style={S.card}>
           <div style={S.cardTitle}>Project Details</div>
-
           <div style={S.fg}>
             <label style={S.lbl}>Project Name *</label>
             <input style={S.input} value={name} onChange={e => setName(e.target.value)} placeholder="Project name" />
           </div>
-
           <div style={S.fg}>
             <label style={S.lbl}>Description</label>
             <textarea style={S.textarea} value={desc} onChange={e => setDesc(e.target.value)} placeholder="What is this project about?" />
           </div>
-
           <div style={S.fg}>
             <label style={S.lbl}>Color Tag</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
@@ -229,11 +227,10 @@ export default function EditProject() {
           </div>
         </div>
 
-        {/* Team Members */}
         <div style={S.card}>
           <div style={S.cardTitle}>Project Team</div>
           <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
-            These people can be assigned to tasks within this project. Removing someone will unassign them from all tasks and subtasks.
+            These people can be assigned to tasks within this project.
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
@@ -273,25 +270,13 @@ export default function EditProject() {
               )
             })}
           </div>
-
-          {members.length > 0 && (
-            <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 10 }}>
-              {members.length} member{members.length !== 1 ? 's' : ''} in project team
-            </div>
-          )}
         </div>
 
-        {/* Impact Preview */}
         {hasImpact && (
           <div style={{ ...S.card, border: '1px solid rgba(197,34,31,0.3)', background: 'var(--red2)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
               ⚠️ Impact Preview — Assignees Being Removed
             </div>
-
-            <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 12 }}>
-              Removing: <strong>{removedUsers.map((u: any) => u.full_name || u.email).join(', ')}</strong>
-            </div>
-
             {impactTasks.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)', marginBottom: 6 }}>
@@ -301,25 +286,6 @@ export default function EditProject() {
                   <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--card-bg)', borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
                     <span style={{ color: 'var(--red)' }}>📋</span>
                     <span style={{ flex: 1, color: 'var(--txt)', fontWeight: 500 }}>{t.topic}</span>
-                    <span style={{ color: 'var(--txt3)', fontSize: 11 }}>
-                      {(Array.isArray(t.assignees) ? t.assignees : [t.owner]).filter(Boolean).join(', ')}
-                    </span>
-                    <span style={{ fontSize: 10, background: 'var(--amber2)', color: 'var(--amber)', padding: '1px 6px', borderRadius: 8 }}>will be unassigned</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {impactSubs.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)', marginBottom: 6 }}>
-                  Affected Subtasks ({impactSubs.length})
-                </div>
-                {impactSubs.map((s: any) => (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--card-bg)', borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
-                    <span style={{ color: 'var(--txt3)' }}>↳</span>
-                    <span style={{ flex: 1, color: 'var(--txt)' }}>{s.topic}</span>
-                    <span style={{ fontSize: 10, background: 'var(--amber2)', color: 'var(--amber)', padding: '1px 6px', borderRadius: 8 }}>will be unassigned</span>
                   </div>
                 ))}
               </div>
@@ -327,20 +293,14 @@ export default function EditProject() {
           </div>
         )}
 
-        {/* Action buttons */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 32 }}>
-          <button onClick={() => router.back()}
-            style={S.cancelBtn}>
-            Cancel
-          </button>
+          <button onClick={() => router.back()} style={S.cancelBtn}>Cancel</button>
           {hasImpact ? (
-            <button onClick={handleSave} disabled={saving}
-              style={{ ...S.dangerBtn, opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Saving...' : `⚠️ Confirm & Save (${impactTasks.length + impactSubs.length} items affected)`}
+            <button onClick={handleSave} disabled={saving} style={{ ...S.dangerBtn, opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Saving...' : `⚠️ Confirm & Save`}
             </button>
           ) : (
-            <button onClick={handleSave} disabled={saving}
-              style={{ ...S.saveBtn, opacity: saving ? 0.7 : 1 }}>
+            <button onClick={handleSave} disabled={saving} style={{ ...S.saveBtn, opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           )}
