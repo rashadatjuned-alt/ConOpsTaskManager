@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { StatusDot } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, LayoutList, Columns, X, Calendar, Clock, Search, Plus, ChevronsUpDown, Users, Filter } from 'lucide-react'
+import { ChevronRight, LayoutList, Columns, X, Calendar, Clock, Plus, ChevronsUpDown, Users, Filter } from 'lucide-react'
 import Link from 'next/link'
 
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
@@ -167,13 +167,28 @@ export default function AllTasks() {
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <StatusDot status={t.status} />
                     <div style={{ fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</div>
-                    <div style={{ display: 'flex' }}>
-                      {[t.owner, ...(t.assignees || [])].filter(Boolean).slice(0, 3).map((name, i) => (
-                        <div key={i} title={name} style={{ width: 18, height: 18, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid var(--bg)', marginLeft: i > 0 ? -6 : 0 }}>{ini(name)}</div>
+                    
+                    {/* AVATAR STACK - ALL MEMBERS WITH HOVER TOOLTIP */}
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      {[t.owner, ...(t.assignees || [])].filter(Boolean).map((name, i) => (
+                        <div 
+                          key={i} 
+                          title={name} 
+                          style={{ 
+                            width: 18, height: 18, borderRadius: '50%', fontSize: 8, fontWeight: 800, 
+                            background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], 
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                            border: '1.5px solid var(--bg)', marginLeft: i > 0 ? -6 : 0, 
+                            cursor: 'help', flexShrink: 0 
+                          }}
+                        >
+                          {ini(name)}
+                        </div>
                       ))}
                     </div>
                   </div>
 
+                  {/* FIXED METADATA COLUMNS */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
                     <div style={{ width: 195, fontSize: 11, color: 'var(--txt3)', textAlign: 'right', paddingRight: 24, whiteSpace: 'nowrap' }}>
                       {t.start_date || '—'} <span style={{ color: 'var(--brd)', margin: '0 4px' }}>→</span> {t.end_date || '—'}
@@ -207,11 +222,26 @@ export default function AllTasks() {
                     <div key={t.id} onClick={() => router.push(`/tasks/${t.id}`)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 8, padding: 12, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                       <div style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>{t.project_name}</div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 10 }}>{t.topic}</div>
+                      
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ fontSize: 10, color: 'var(--txt3)' }}><Calendar size={11} style={{ marginRight: 4 }} /> {t.end_date}</div>
-                        <div style={{ display: 'flex' }}>
-                          {[t.owner, ...(t.assignees || [])].filter(Boolean).slice(0, 2).map((name, i) => (
-                            <div key={i} style={{ width: 16, height: 16, borderRadius: '50%', fontSize: 7, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid var(--bg)', marginLeft: i > 0 ? -4 : 0 }}>{ini(name)}</div>
+                        <div style={{ fontSize: 10, color: 'var(--txt3)', display: 'flex', alignItems: 'center', gap: 4 }}><Calendar size={11} /> {t.end_date}</div>
+                        
+                        {/* KANBAN FOOTER AVATARS */}
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          {[t.owner, ...(t.assignees || [])].filter(Boolean).map((name, i) => (
+                            <div 
+                              key={i} 
+                              title={name} 
+                              style={{ 
+                                width: 16, height: 16, borderRadius: '50%', fontSize: 7, fontWeight: 800, 
+                                background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], 
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                                border: '1.5px solid var(--bg)', marginLeft: i > 0 ? -4 : 0, 
+                                cursor: 'help' 
+                              }}
+                            >
+                              {ini(name)}
+                            </div>
                           ))}
                         </div>
                       </div>
