@@ -21,7 +21,6 @@ export default function Dashboard() {
       
       const { data: t } = await supabase.from('Tasks').select('*')
       
-      // Filter tasks assigned to me
       const myTasks = (t || []).filter(task => 
         (task.owner || '').includes(name) || 
         (task.assignees || []).includes(name)
@@ -35,7 +34,6 @@ export default function Dashboard() {
 
   if (loading) return <AppShell title="Dashboard">Loading metrics...</AppShell>
 
-  // Calculate metrics
   const activeTasks = tasks.filter(t => t.status === 'In Progress').length
   const pendingTasks = tasks.filter(t => t.status === 'Not Started').length
   const completedTasks = tasks.filter(t => t.status === 'Completed').length
@@ -99,12 +97,6 @@ export default function Dashboard() {
           align-items: center;
           gap: 12px;
           margin-bottom: 8px;
-        }
-
-        .widget-icon {
-          display: flex;
-          align-items: center;
-          justify-content: center;
         }
 
         .widget-value {
