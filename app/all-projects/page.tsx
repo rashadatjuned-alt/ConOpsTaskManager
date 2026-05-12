@@ -51,7 +51,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, canEdit, onClose, onRefresh }
       <div style={{ background: 'var(--bg)', borderRadius: '12px', width: 480, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)', border: '1px solid var(--brd)' }}>
         <div style={{ background: isEditing ? editColor : (proj.color_code || '#378ADD'), padding: '16px 20px 12px', position: 'relative', color: '#fff' }}>
           <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 6 }}>
-            {/* SMALL SUBTLE MODIFY BUTTON */}
             {canEdit && !isEditing && (
               <button onClick={() => setIsEditing(true)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '4px', width: 24, height: 24, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Modify Project">
                 <Edit3 size={12} />
@@ -59,12 +58,10 @@ function ProjectInfoModal({ proj, tasks, allUsers, canEdit, onClose, onRefresh }
             )}
             <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: 24, height: 24, color: '#fff', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><X size={12} /></button>
           </div>
-          
           <div style={{ fontSize: 16, fontWeight: 600 }}>{isEditing ? 'Edit Project' : proj.name}</div>
           {!isEditing && <div style={{ fontSize: 12, opacity: 0.8 }}>{projTasks.length} tasks · {pct}% complete</div>}
           {!isEditing && <div style={{ height: 4, background: 'rgba(255,255,255,0.3)', borderRadius: 2, marginTop: 10, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: '#fff' }} /></div>}
         </div>
-
         <div style={{ padding: '16px 20px' }}>
           {isEditing ? (
             <div style={{ display:'flex', flexDirection:'column', gap: 12 }}>
@@ -119,7 +116,7 @@ export default function AllProjects() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [collTask, setCollTask] = useState<Record<string, boolean>>({})
   const [infoProj, setInfoProj] = useState<any | null>(null)
-  const [filterId, setFilterId] = useState('all') // DROP-DOWN FILTER STATE
+  const [filterId, setFilterId] = useState('all')
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [myRole, setMyRole] = useState('')
   const [allExpanded, setAllExpanded] = useState(true)
@@ -140,7 +137,6 @@ export default function AllProjects() {
 
   useEffect(() => { loadData() }, [])
 
-  // ── FILTER LOGIC ──
   const filteredProjects = useMemo(() => {
     if (filterId === 'all') return projects
     return projects.filter(p => p.id === filterId)
@@ -160,25 +156,18 @@ export default function AllProjects() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          
-          {/* PROJECT DROPDOWN FILTER */}
           <div style={{ position: 'relative', display:'flex', alignItems:'center', gap: 8, background:'var(--bg2)', border:'1px solid var(--brd)', borderRadius:8, padding:'4px 10px' }}>
             <Filter size={14} color="var(--txt3)" />
-            <select 
-              value={filterId} 
-              onChange={e => setFilterId(e.target.value)}
-              style={{ background:'transparent', border:'none', color:'var(--txt)', fontSize:13, outline:'none', cursor:'pointer', paddingRight:20 }}
-            >
+            <select value={filterId} onChange={e => setFilterId(e.target.value)} style={{ background:'transparent', border:'none', color:'var(--txt)', fontSize:13, outline:'none', cursor:'pointer', paddingRight:20 }}>
               <option value="all">All Projects</option>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-
-          <button className="tv-btn" onClick={toggleCollapseAll}>
-            {allExpanded ? <ChevronsUpDown size={14}/> : <ChevronsUpDown size={14}/>}
+          <button className="tv-btn" onClick={toggleCollapseAll} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px' }}>
+            <ChevronsUpDown size={14}/>
+            <span style={{ fontSize: 12, fontWeight: 500 }}>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
           </button>
         </div>
-
         <div style={{ display: 'flex', gap: 6 }}>
            <button className={view === 'list' ? 'btn btn-primary' : 'btn'} onClick={() => setView('list')}><LayoutList size={16} /></button>
            <button className={view === 'kanban' ? 'btn btn-primary' : 'btn'} onClick={() => setView('kanban')}><Columns size={16} /></button>
@@ -192,7 +181,7 @@ export default function AllProjects() {
           const pct = ptasks.length ? Math.round((ptasks.filter(t => t.status === 'Completed').length / ptasks.length) * 100) : 0
           const isOpen = !collapsed[proj.id]
           return (
-            <div key={proj.id} style={{ border: '1px solid var(--brd)', borderRadius: 12, background: 'var(--bg)', overflow: 'hidden', marginBottom: 12 }}>
+            <div key={proj.id} style={{ border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--bg)', overflow: 'hidden', marginBottom: 12 }}>
               <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', cursor: 'pointer', background: isOpen ? 'var(--bg2)' : 'transparent' }} onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
                   <ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : '', transition: '0.2s', color: 'var(--txt3)' }} />
@@ -208,7 +197,6 @@ export default function AllProjects() {
                   <button onClick={e => { e.stopPropagation(); setInfoProj(proj) }} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><Info size={16}/></button>
                 </div>
               </div>
-
               {isOpen && (
                 <div style={{ padding: '0 0 8px 0' }}>
                   {ptasks.map(t => {
@@ -252,7 +240,6 @@ export default function AllProjects() {
           )
         })
       ) : (
-        /* ─── KANBAN VIEW ─── */
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, alignItems: 'start' }}>
           {STATUSES.map(status => {
             const groupTasks = tasks.filter(t => t.status === status && (filterId === 'all' || projects.find(p => p.id === filterId)?.name === t.project_name))
