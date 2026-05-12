@@ -9,7 +9,6 @@ export default {
   theme: {
     extend: {
       colors: {
-        // You can add your custom variables here if needed
         accent: "var(--accent)",
         accent2: "var(--accent2)",
       },
