@@ -4,7 +4,11 @@ import { useEffect, useState, useMemo } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { LayoutDashboard, CheckCircle2, Clock, AlertCircle, ListTodo, X, BarChart3, CalendarDays, History, Hourglass, User, Users } from 'lucide-react'
+import { 
+  LayoutDashboard, CheckCircle2, Clock, AlertCircle, 
+  ListTodo, X, BarChart3, CalendarDays, History, 
+  Hourglass, User, Users 
+} from 'lucide-react'
 
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
@@ -29,24 +33,25 @@ export default function Dashboard() {
   const [subtasks, setSubtasks] = useState<any[]>([])
   const [showModal, setShowModal] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  
-  // View Toggle State: 'me' or 'team'
   const [viewMode, setViewMode] = useState<'me' | 'team'>('me')
 
   useEffect(() => {
-    const load = async () => {
+    const loadData = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const { data: u } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
-      setMe({ ...u, email: session.user.email })
+      const profile = { ...u, email: session.user.email }
+      setMe(profile)
       
-      // Managers default to Team View, Members default to My View
-      if (u?.role === 'Manager' || u?.role === 'Admin') setViewMode('team')
+      if (profile.role === 'Manager' || profile.role === 'Admin') setViewMode('team')
 
-      const [t, s] = await Promise.all([supabase.from('Tasks').select('*'), supabase.from('Subtasks').select('*')])
+      const [t, s] = await Promise.all([
+        supabase.from('Tasks').select('*'),
+        supabase.from('Subtasks').select('*'),
+      ])
       setTasks(t.data || []); setSubtasks(s.data || []); setLoading(false)
     }
-    load()
+    loadData()
   }, [])
 
   const isMe = (owner: string, assignees: string[] = []) => {
@@ -54,10 +59,9 @@ export default function Dashboard() {
     return o.includes(e) || (n.length > 2 && o.includes(n)) || (assignees || []).some(a => a.toLowerCase().includes(e) || a.toLowerCase().includes(n))
   }
 
-  // ─── TASK FILTERING LOGIC ───
   const currentTasks = useMemo(() => {
     if (viewMode === 'me') return tasks.filter(t => isMe(t.owner, t.assignees))
-    return tasks // Team View shows everything
+    return tasks
   }, [tasks, me, viewMode])
 
   const now = new Date(); now.setHours(0,0,0,0)
@@ -77,46 +81,84 @@ export default function Dashboard() {
     }
   }, [currentTasks, now])
 
-  if (loading) return <AppShell title="Dashboard">Loading...</AppShell>
+  if (loading) return <AppShell title="Dashboard">Loading Workspace...</AppShell>
 
   const isManager = me?.role === 'Manager' || me?.role === 'Admin'
 
   return (
-    <AppShell title={viewMode === 'me' ? "My Personal Dashboard" : "Team Oversight Dashboard"}>
+    <AppShell title={viewMode === 'me' ? "My Personal Workspace" : "Team Performance Oversight"}>
       
-      {/* HEADER ACTIONS */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      {/* ─── HEADER SECTION ─── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Hello, {me?.full_name?.split(' ')[0]}</h2>
-          <p style={{ color: 'var(--txt3)', fontSize: 13 }}>Switch between your tasks and the team's progress below.</p>
+          <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>Hello, {me?.full_name?.split(' ')[0]}</h2>
+          <p style={{ color: 'var(--txt3)', fontSize: 13, marginTop: 4 }}>
+            {viewMode === 'team' ? "You're currently viewing the full team's performance." : "Focusing on your active assignments."}
+          </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {/* VIEW TOGGLE - Only for Managers/Admins */}
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
           {isManager && (
-            <div style={{ display: 'flex', background: 'var(--bg2)', padding: 4, borderRadius: 8, border: '1px solid var(--brd)' }}>
+            <div style={{ display: 'flex', background: 'var(--bg2)', padding: 4, borderRadius: 10, border: '1px solid var(--brd)' }}>
               <button 
                 onClick={() => setViewMode('me')}
-                style={{ padding: '6px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, background: viewMode === 'me' ? 'var(--bg)' : 'transparent', color: viewMode === 'me' ? 'var(--txt)' : 'var(--txt3)' }}
+                style={{ 
+                  padding: '6px 14px', borderRadius: 8, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', 
+                  display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
+                  background: viewMode === 'me' ? 'var(--bg)' : 'transparent', 
+                  color: viewMode === 'me' ? 'var(--txt)' : 'var(--txt3)',
+                  boxShadow: viewMode === 'me' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none', transition: '0.2s'
+                }}
               >
-                <User size={14}/> My View
+                <User size={13}/> My View
               </button>
               <button 
                 onClick={() => setViewMode('team')}
-                style={{ padding: '6px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, background: viewMode === 'team' ? 'var(--bg)' : 'transparent', color: viewMode === 'team' ? 'var(--txt)' : 'var(--txt3)' }}
+                style={{ 
+                  padding: '6px 14px', borderRadius: 8, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', 
+                  display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
+                  background: viewMode === 'team' ? 'var(--bg)' : 'transparent', 
+                  color: viewMode === 'team' ? 'var(--txt)' : 'var(--txt3)',
+                  boxShadow: viewMode === 'team' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none', transition: '0.2s'
+                }}
               >
-                <Users size={14}/> Team View
+                <Users size={13}/> Team View
               </button>
             </div>
           )}
-          
+
+          {/* PREMIUM WORKLOAD BUTTON */}
           {isManager && (
-            <button className="tv-btn" onClick={() => router.push('/workload')}><BarChart3 size={14} style={{ marginRight: 6 }}/> Workload</button>
+            <button 
+              onClick={() => router.push('/workload')}
+              style={{
+                background: 'linear-gradient(135deg, #378ADD 0%, #1B5299 100%)',
+                color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px',
+                fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'flex',
+                alignItems: 'center', gap: 10, boxShadow: '0 4px 15px rgba(55, 138, 221, 0.25)',
+                transition: 'all 0.2s ease', position: 'relative'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 20px rgba(55, 138, 221, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 15px rgba(55, 138, 221, 0.25)';
+              }}
+            >
+              <BarChart3 size={16} />
+              <span style={{ letterSpacing: '0.03em' }}>TEAM WORKLOAD</span>
+              <div style={{
+                background: 'rgba(255,255,255,0.2)', padding: '2px 6px', borderRadius: '4px',
+                fontSize: '9px', fontWeight: 900, border: '1px solid rgba(255,255,255,0.2)'
+              }}>MGMT</div>
+            </button>
           )}
         </div>
       </div>
 
-      {/* STATUS METRICS */}
+      {/* ─── STATUS METRICS ─── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
         {[
           { id: 'Not Started', color: '#aaa', icon: <ListTodo size={18}/> },
@@ -126,16 +168,16 @@ export default function Dashboard() {
         ].map(card => {
           const count = metrics[card.id as keyof typeof metrics].length
           return (
-            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 16, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6, transition: '0.2s' }} onMouseEnter={e => count > 0 && (e.currentTarget.style.borderColor = card.color)} onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--brd)'}>
-              <div style={{ color: card.color, marginBottom: 8 }}>{card.icon}</div>
-              <div style={{ fontSize: 24, fontWeight: 800 }}>{count}</div>
+            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 18, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6, transition: '0.2s' }} onMouseEnter={e => count > 0 && (e.currentTarget.style.borderColor = card.color)} onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--brd)'}>
+              <div style={{ color: card.color, marginBottom: 10 }}>{card.icon}</div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>{count}</div>
               <div style={{ fontSize: 11, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase' }}>{card.id}</div>
             </div>
           )
         })}
       </div>
 
-      {/* TIMELINE METRICS */}
+      {/* ─── TIMELINE METRICS ─── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
         {[
           { id: 'Overdue', color: '#ef4444', icon: <History size={18}/> },
@@ -144,30 +186,30 @@ export default function Dashboard() {
         ].map(card => {
           const count = metrics[card.id as keyof typeof metrics].length
           return (
-            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 16, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6, borderLeft: count > 0 ? `4px solid ${card.color}` : '1px solid var(--brd)' }}>
-              <div style={{ color: card.color, marginBottom: 8 }}>{card.icon}</div>
-              <div style={{ fontSize: 24, fontWeight: 800 }}>{count}</div>
+            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 18, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6, borderLeft: count > 0 ? `4px solid ${card.color}` : '1px solid var(--brd)', transition: '0.2s' }}>
+              <div style={{ color: card.color, marginBottom: 10 }}>{card.icon}</div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>{count}</div>
               <div style={{ fontSize: 11, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase' }}>{card.id}</div>
             </div>
           )
         })}
       </div>
 
-      {/* PIPELINE SECTION */}
+      {/* ─── PIPELINE SECTION ─── */}
       <div style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 24 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <LayoutDashboard size={18} /> {viewMode === 'me' ? 'My Pipeline' : 'Team Pipeline'}
+        <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase', color: 'var(--txt2)', letterSpacing: '0.02em' }}>
+          <LayoutDashboard size={18} /> {viewMode === 'me' ? 'My Pipeline' : 'Team Pipeline'}
         </h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {STATUSES.map(status => (
             <div key={status}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--txt3)', textTransform: 'uppercase', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--brd)', paddingBottom: 6 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--brd)', paddingBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{STATUS_ICONS[status]} {status}</div>
-                <span>{metrics[status].length}</span>
+                <span style={{ fontSize: 11 }}>{metrics[status].length}</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {metrics[status].slice(0, 6).map(t => (
-                  <div key={t.id} onClick={() => router.push(`/tasks/${t.id}`)} style={{ background: 'var(--bg2)', padding: 10, borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '1px solid transparent' }} onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--brd)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}>
+                  <div key={t.id} onClick={() => router.push(`/tasks/${t.id}`)} style={{ background: 'var(--bg2)', padding: '12px', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', transition: '0.2s' }} onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--brd)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}>
                     {t.topic}
                   </div>
                 ))}
@@ -177,22 +219,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* FILTER POP-UP MODAL */}
+      {/* ─── DETAIL POP-UP MODAL ─── */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setShowModal(null)}>
-          <div style={{ width: '90%', maxWidth: 900, background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--brd)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{viewMode === 'me' ? 'My' : 'Team'} {showModal} Tasks</div>
-              <button onClick={() => setShowModal(null)} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><X size={20}/></button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)' }} onClick={() => setShowModal(null)}>
+          <div style={{ width: '90%', maxWidth: 900, background: 'var(--bg)', borderRadius: 16, border: '1px solid var(--brd)', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{viewMode === 'me' ? 'My' : 'Team'} {showModal} Summary</div>
+              <button onClick={() => setShowModal(null)} style={{ background: 'var(--bg2)', border: '1px solid var(--brd)', borderRadius: '50%', width: 32, height: 32, color: 'var(--txt3)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18}/></button>
             </div>
-            <div style={{ padding: 20, maxHeight: '70vh', overflowY: 'auto' }}>
+            <div style={{ padding: 0, maxHeight: '65vh', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ fontSize: 11, color: 'var(--txt3)', textTransform: 'uppercase', borderBottom: '1px solid var(--brd)' }}>
-                    <th style={{ padding: '12px 8px' }}>Task Title</th>
+                  <tr style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', background: 'var(--bg2)', fontWeight: 800 }}>
+                    <th style={{ padding: '16px 24px' }}>Task Title</th>
                     <th>Project</th>
                     <th>Sub-task Progress</th>
-                    <th style={{ textAlign: 'right' }}>Members</th>
+                    <th style={{ textAlign: 'right', paddingRight: 24 }}>Members</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -201,18 +243,18 @@ export default function Dashboard() {
                     const pct = subs.length ? Math.round((subs.filter(s => s.status === 'Completed').length / subs.length) * 100) : (t.status === 'Completed' ? 100 : 0)
                     return (
                       <tr key={t.id} style={{ borderBottom: '1px solid var(--brd)', fontSize: 13 }}>
-                        <td style={{ padding: '16px 8px', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</td>
+                        <td style={{ padding: '18px 24px', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</td>
                         <td style={{ color: 'var(--txt2)' }}>{t.project_name}</td>
                         <td>
                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ flex: 1, maxWidth: 80, height: 4, background: 'var(--brd)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: 'var(--txt2)' }} /></div>
-                              <span style={{ fontSize: 10, color: 'var(--txt3)' }}>{pct}%</span>
+                              <div style={{ flex: 1, maxWidth: 100, height: 4, background: 'var(--brd)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: 'var(--txt2)' }} /></div>
+                              <span style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 700 }}>{pct}%</span>
                            </div>
                         </td>
-                        <td style={{ textAlign: 'right' }}>
+                        <td style={{ textAlign: 'right', paddingRight: 24 }}>
                           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                             {[t.owner, ...(t.assignees || [])].filter(Boolean).map((name, i) => (
-                              <div key={i} title={name} style={{ width: 20, height: 20, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid var(--bg)', marginLeft: -6, cursor: 'default' }}>{ini(name)}</div>
+                              <div key={i} title={name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg)', marginLeft: -8, cursor: 'default' }}>{ini(name)}</div>
                             ))}
                           </div>
                         </td>
