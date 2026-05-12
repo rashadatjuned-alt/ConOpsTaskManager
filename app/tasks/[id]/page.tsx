@@ -49,7 +49,7 @@ export default function TaskDetail() {
   const { id }   = useParams<{ id: string }>()
   const [task,         setTask]         = useState<any>(null)
   const [subtasks,     setSubtasks]     = useState<any[]>([])
-  const [projectTeam,  setProjectTeam]  = useState<any[]>([])   // {id, full_name} — project members
+  const [projectTeam,  setProjectTeam]  = useState<any[]>([])
   const [myRole,       setMyRole]       = useState('')
   const [editing,      setEditing]      = useState(false)
   const [saving,       setSaving]       = useState(false)
@@ -107,6 +107,7 @@ export default function TaskDetail() {
     setEditing(false)
     setEditTask(null)
     setEditSubtasks([])
+    setResources(Array.isArray(task.resources) ? task.resources : []) // Fixed resource rollback
     setError('')
   }
 
@@ -303,6 +304,7 @@ export default function TaskDetail() {
           </svg>
         </button>
         <div style={S.topTitle}>{task.topic}</div>
+        
         {/* Status — always editable */}
         <select
           value={editing ? editTask.status : task.status}
@@ -350,257 +352,230 @@ export default function TaskDetail() {
       {error   && <div style={S.alertErr}>{error}</div>}
       {success && <div style={S.alertOk}>{success}</div>}
 
-      {/* ── Two column ── */}
-      <div style={S.twoCol}>
-        {/* Left: main fields */}
-        <div>
-          <div style={S.card}>
-            <div style={S.cardTitle}>Task Details</div>
+      {/* ── Main Single Column Stack ── */}
+      <div style={S.pageStack}>
+        
+        {/* ── TASK DETAILS SECTION ── */}
+        <div style={S.card}>
+          <div style={S.sectionHeader}>
+            <div style={S.sectionTitle}>Task Details</div>
+          </div>
 
+          <div style={S.fieldGroup}>
+            <label style={S.label}>Task Title</label>
+            {editing
+              ? <input style={S.input} value={editTask.topic || ''} onChange={e => setEditTask((p: any) => ({ ...p, topic: e.target.value }))} />
+              : <div style={S.viewVal}>{task.topic}</div>
+            }
+          </div>
+
+          <div style={S.fieldGroup}>
+            <label style={S.label}>Description</label>
+            {editing
+              ? <textarea style={S.textarea} value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
+              : <div style={{ ...S.viewVal, color: task.description ? 'var(--txt2)' : 'var(--txt3)' }}>{task.description || 'No description.'}</div>
+            }
+          </div>
+
+          <div style={S.multiGrid}>
             <div style={S.fieldGroup}>
-              <label style={S.label}>Task Title</label>
+              <label style={S.label}>Start Date</label>
               {editing
-                ? <input style={S.input} value={editTask.topic || ''} onChange={e => setEditTask((p: any) => ({ ...p, topic: e.target.value }))} />
-                : <div style={S.viewVal}>{task.topic}</div>
+                ? <input type="date" style={S.input} value={editTask.start_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, start_date: e.target.value }))} />
+                : <div style={S.viewVal}>{task.start_date || '—'}</div>
               }
             </div>
-
             <div style={S.fieldGroup}>
-              <label style={S.label}>Description</label>
+              <label style={S.label}>End Date</label>
               {editing
-                ? <textarea style={S.textarea} value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
-                : <div style={{ ...S.viewVal, color: task.description ? 'var(--txt2)' : 'var(--txt3)' }}>{task.description || 'No description.'}</div>
+                ? <input type="date" style={S.input} value={editTask.end_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, end_date: e.target.value }))} />
+                : <div style={S.viewVal}>{task.end_date || '—'}</div>
               }
             </div>
-
-            <div style={S.grid2}>
-              <div style={S.fieldGroup}>
-                <label style={S.label}>Start Date</label>
-                {editing
-                  ? <input type="date" style={S.input} value={editTask.start_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, start_date: e.target.value }))} />
-                  : <div style={S.viewVal}>{task.start_date || '—'}</div>
-                }
-              </div>
-              <div style={S.fieldGroup}>
-                <label style={S.label}>End Date</label>
-                {editing
-                  ? <input type="date" style={S.input} value={editTask.end_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, end_date: e.target.value }))} />
-                  : <div style={S.viewVal}>{task.end_date || '—'}</div>
-                }
-              </div>
-              <div style={S.fieldGroup}>
-                <label style={S.label}>Task Type</label>
-                {editing
-                  ? <select style={S.input} value={editTask.type || 'One-time'} onChange={e => setEditTask((p: any) => ({ ...p, type: e.target.value }))}>{TYPES.map((t: any) => <option key={t}>{t}</option>)}</select>
-                  : <div style={S.viewVal}>{task.type}</div>
-                }
-              </div>
-              <div style={S.fieldGroup}>
-                <label style={S.label}>Project</label>
-                <div style={S.viewVal}>{task.project_name || '—'}</div>
-              </div>
-            </div>
-
-            {/* Assigned To */}
             <div style={S.fieldGroup}>
-              <label style={S.label}>Assigned To</label>
-              {editing ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                  {projectTeam.map((u: any) => {
-                    const sel = editAssignees.includes(u.full_name)
-                    return (
-                      <button key={u.id} type="button"
-                        onClick={() => toggleAssignee(u.full_name)}
-                        style={{ ...S.chip, ...(sel ? S.chipSel : {}) }}>
-                        {sel ? '✓ ' : ''}{u.full_name}
-                      </button>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div style={S.viewVal}>{taskAssignees.join(', ') || '—'}</div>
+              <label style={S.label}>Task Type</label>
+              {editing
+                ? <select style={S.input} value={editTask.type || 'One-time'} onChange={e => setEditTask((p: any) => ({ ...p, type: e.target.value }))}>{TYPES.map((t: any) => <option key={t}>{t}</option>)}</select>
+                : <div style={S.viewVal}>{task.type}</div>
+              }
+            </div>
+            <div style={S.fieldGroup}>
+              <label style={S.label}>Project</label>
+              <div style={S.viewVal}>{task.project_name || '—'}</div>
+            </div>
+          </div>
+
+          {/* Assigned To */}
+          <div style={S.fieldGroup}>
+            <label style={S.label}>Assigned To</label>
+            {editing ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                {projectTeam.map((u: any) => {
+                  const sel = editAssignees.includes(u.full_name)
+                  return (
+                    <button key={u.id} type="button"
+                      onClick={() => toggleAssignee(u.full_name)}
+                      style={{ ...S.chip, ...(sel ? S.chipSel : {}) }}>
+                      {sel ? '✓ ' : ''}{u.full_name}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div style={S.viewVal}>{taskAssignees.join(', ') || '—'}</div>
+            )}
+          </div>
+        </div>
+
+        {/* ── RESOURCES SECTION ── */}
+        <div style={S.card}>
+          <div style={S.sectionHeader}>
+            <div style={S.sectionTitle}>Resources</div>
+            {editing && <button style={S.addBtn} onClick={addResource}>+ Add Resource</button>}
+          </div>
+          
+          {resources.length === 0 ? (
+            <div style={S.emptyMsg}>No resources attached.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  {['SL', 'Title', 'Link', ...(editing ? [''] : [])].map(h => (
+                    <th key={h} style={S.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {resources.map((r, i) => (
+                  <tr key={i}>
+                    <td style={S.td}>{r.sl}</td>
+                    <td style={S.td}>
+                      {editing
+                        ? <input style={S.inlineInput} value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} />
+                        : r.title
+                      }
+                    </td>
+                    <td style={S.td}>
+                      {editing
+                        ? <input style={S.inlineInput} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://…" />
+                        : r.link
+                          ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', fontSize: 13, textDecoration: 'underline' }}>{r.link}</a>
+                          : '—'
+                      }
+                    </td>
+                    {editing && (
+                      <td style={S.td}>
+                        <button onClick={() => removeResource(i)} style={S.removeBtn}>✕</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* ── SUBTASKS SECTION ── */}
+        <div style={S.card}>
+          <div style={S.sectionHeader}>
+            <div style={S.sectionTitle}>
+              Subtasks
+              {subtasks.length > 0 && (
+                <span style={{ fontSize: 12, color: 'var(--txt3)', marginLeft: 12, fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>
+                  {subtasks.filter((s: any) => s.status === 'Completed').length} / {subtasks.length} completed
+                </span>
               )}
             </div>
+            {editing && <button style={S.addBtn} onClick={addSubtask}>+ Add Subtask</button>}
           </div>
 
-          {/* Resources */}
-          <div style={S.card}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={S.cardTitle}>Resources</div>
-              {editing && <button style={S.addBtn} onClick={addResource}>+ Add</button>}
-            </div>
-            {resources.length === 0 ? (
-              <div style={S.emptyMsg}>No resources attached.</div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {['SL', 'Title', 'Link', ...(editing ? [''] : [])].map(h => (
-                      <th key={h} style={S.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {resources.map((r, i) => (
-                    <tr key={i}>
-                      <td style={S.td}>{r.sl}</td>
-                      <td style={S.td}>
-                        {editing
-                          ? <input style={S.inlineInput} value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} />
-                          : r.title
-                        }
-                      </td>
-                      <td style={S.td}>
-                        {editing
-                          ? <input style={S.inlineInput} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://…" />
-                          : r.link
-                            ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', fontSize: 12 }}>{r.link}</a>
-                            : '—'
-                        }
-                      </td>
+          {(editing ? editSubtasks : subtasks).length === 0 ? (
+            <div style={S.emptyMsg}>No subtasks yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {(editing ? editSubtasks : subtasks).map((s, i) => {
+                const subAssignees = assigneesFromRow(s)
+                const taskAssigneeList: string[] = editing
+                  ? (editTask?.assignees || [])
+                  : taskAssignees
+
+                return (
+                  <div key={s.id} style={S.subCard}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <span style={S.subNum}>#{i + 1}</span>
+                      {!editing && <Pill status={s.status} />}
                       {editing && (
-                        <td style={S.td}>
-                          <button onClick={() => removeResource(i)} style={S.removeBtn}>✕</button>
-                        </td>
+                        <button onClick={() => removeSub(s)} style={{ ...S.removeBtn, marginLeft: 'auto' }}>✕ Remove</button>
                       )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-
-        {/* Right: info panel */}
-        <div>
-          <div style={S.card}>
-            <div style={S.cardTitle}>Task Info</div>
-            <div style={S.infoGrid}>
-              {[
-                ['Project',    task.project_name || '—'],
-                ['Type',       task.type],
-                ['Start',      task.start_date || '—'],
-                ['End',        task.end_date || '—'],
-                ['Assignees',  taskAssignees.join(', ') || '—'],
-                ['Status',     null],
-              ].map(([lbl, val]) => (
-                <div key={lbl as string}>
-                  <div style={S.infoLabel}>{lbl}</div>
-                  <div style={S.infoVal}>
-                    {lbl === 'Status' ? <Pill status={task.status} /> : val}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {isRecurring && task.start_date && task.end_date && (
-              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--txt3)', borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
-                Next: <strong style={{ color: 'var(--txt2)' }}>{nextRecurrence(task.start_date, task.end_date, task.type).start}</strong>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Subtasks ── */}
-      <div style={{ ...S.card, marginTop: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={S.cardTitle}>
-            Subtasks
-            {subtasks.length > 0 && (
-              <span style={{ fontSize: 12, color: 'var(--txt3)', marginLeft: 8, fontWeight: 400 }}>
-                {subtasks.filter((s: any) => s.status === 'Completed').length} / {subtasks.length} completed
-              </span>
-            )}
-          </div>
-          {editing && <button style={S.addBtn} onClick={addSubtask}>+ Add Subtask</button>}
-        </div>
-
-        {(editing ? editSubtasks : subtasks).length === 0 ? (
-          <div style={S.emptyMsg}>No subtasks yet.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {(editing ? editSubtasks : subtasks).map((s, i) => {
-              const subAssignees = assigneesFromRow(s)
-              const taskAssigneeList: string[] = editing
-                ? (editTask?.assignees || [])
-                : taskAssignees
-
-              return (
-                <div key={s.id} style={S.subCard}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <span style={S.subNum}>#{i + 1}</span>
-                    {!editing && <Pill status={s.status} />}
-                    {editing && (
-                      <button onClick={() => removeSub(s)} style={{ ...S.removeBtn, marginLeft: 'auto' }}>✕ Remove</button>
-                    )}
-                  </div>
-
-                  <div style={S.grid2}>
-                    <div style={S.fieldGroup}>
-                      <label style={S.label}>Title</label>
-                      {editing
-                        ? <input style={S.input} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} />
-                        : <div style={S.viewVal}>{s.topic}</div>
-                      }
                     </div>
-                    <div style={S.fieldGroup}>
-                      <label style={S.label}>Status</label>
-                      {editing
-                        ? <select style={S.input} value={s.status} onChange={e => updateSub(String(s.id), 'status', e.target.value)}>{STATUSES.map(st => <option key={st}>{st}</option>)}</select>
-                        : <div style={S.viewVal}>{s.status}</div>
-                      }
-                    </div>
-                    <div style={S.fieldGroup}>
-                      <label style={S.label}>Start Date</label>
-                      {editing
-                        ? <input type="date" style={S.input} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
-                        : <div style={S.viewVal}>{s.start_date || '—'}</div>
-                      }
-                    </div>
-                    <div style={S.fieldGroup}>
-                      <label style={S.label}>End Date</label>
-                      {editing
-                        ? <input type="date" style={S.input} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
-                        : <div style={S.viewVal}>{s.end_date || '—'}</div>
-                      }
-                    </div>
-                  </div>
 
-                  <div style={S.fieldGroup}>
-                    <label style={S.label}>Description</label>
-                    {editing
-                      ? <textarea style={S.textarea} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Optional…" />
-                      : <div style={{ ...S.viewVal, color: s.description ? 'var(--txt2)' : 'var(--txt3)' }}>{s.description || '—'}</div>
-                    }
-                  </div>
-
-                  <div style={S.fieldGroup}>
-                    <label style={S.label}>Assigned To (from task assignees)</label>
-                    {editing ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
-                        {taskAssigneeList.length === 0
-                          ? <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Assign people to the task first.</span>
-                          : taskAssigneeList.map(name => {
-                              const sel = (s.assignees || []).includes(name)
-                              return (
-                                <button key={name} type="button"
-                                  onClick={() => toggleSubAssignee(String(s.id), name)}
-                                  style={{ ...S.chip, ...(sel ? S.chipSel : {}), fontSize: 11, padding: '2px 8px' }}>
-                                  {sel ? '✓ ' : ''}{name}
-                                </button>
-                              )
-                            })
+                    <div style={S.multiGrid}>
+                      <div style={S.fieldGroup}>
+                        <label style={S.label}>Title</label>
+                        {editing
+                          ? <input style={S.input} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} />
+                          : <div style={S.viewVal}>{s.topic}</div>
                         }
                       </div>
-                    ) : (
-                      <div style={S.viewVal}>{subAssignees.join(', ') || '—'}</div>
-                    )}
+                      <div style={S.fieldGroup}>
+                        <label style={S.label}>Status</label>
+                        {editing
+                          ? <select style={S.input} value={s.status} onChange={e => updateSub(String(s.id), 'status', e.target.value)}>{STATUSES.map(st => <option key={st}>{st}</option>)}</select>
+                          : <div style={S.viewVal}>{s.status}</div>
+                        }
+                      </div>
+                      <div style={S.fieldGroup}>
+                        <label style={S.label}>Start Date</label>
+                        {editing
+                          ? <input type="date" style={S.input} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
+                          : <div style={S.viewVal}>{s.start_date || '—'}</div>
+                        }
+                      </div>
+                      <div style={S.fieldGroup}>
+                        <label style={S.label}>End Date</label>
+                        {editing
+                          ? <input type="date" style={S.input} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
+                          : <div style={S.viewVal}>{s.end_date || '—'}</div>
+                        }
+                      </div>
+                    </div>
+
+                    <div style={S.fieldGroup}>
+                      <label style={S.label}>Description</label>
+                      {editing
+                        ? <textarea style={S.textarea} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Optional…" />
+                        : <div style={{ ...S.viewVal, color: s.description ? 'var(--txt2)' : 'var(--txt3)' }}>{s.description || '—'}</div>
+                      }
+                    </div>
+
+                    <div style={{ marginBottom: 0 }}>
+                      <label style={S.label}>Assigned To (from task assignees)</label>
+                      {editing ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+                          {taskAssigneeList.length === 0
+                            ? <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Assign people to the task first.</span>
+                            : taskAssigneeList.map(name => {
+                                const sel = (s.assignees || []).includes(name)
+                                return (
+                                  <button key={name} type="button"
+                                    onClick={() => toggleSubAssignee(String(s.id), name)}
+                                    style={{ ...S.chip, ...(sel ? S.chipSel : {}), fontSize: 11, padding: '2px 8px' }}>
+                                    {sel ? '✓ ' : ''}{name}
+                                  </button>
+                                )
+                              })
+                          }
+                        </div>
+                      ) : (
+                        <div style={S.viewVal}>{subAssignees.join(', ') || '—'}</div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </AppShell>
   )
@@ -609,9 +584,9 @@ export default function TaskDetail() {
 // ── styles ─────────────────────────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
   loading:   { padding: 40, color: 'var(--txt3)', textAlign: 'center' },
-  topBar:    { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
+  topBar:    { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' },
   backBtn:   { background: 'none', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 8px', color: 'var(--txt3)', cursor: 'pointer', display: 'flex' },
-  topTitle:  { flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--txt)', letterSpacing: '-0.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  topTitle:  { flex: 1, fontSize: 16, fontWeight: 600, color: 'var(--txt)', letterSpacing: '-0.01em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   statusSelect: { padding: '4px 8px', borderRadius: 6, background: 'var(--input-bg)', border: '1px solid var(--input-brd)', color: 'var(--txt)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
   recurBadge: { background: '#3d2400', color: '#f59e0b', fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500 },
   editBtn:   { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
@@ -619,29 +594,30 @@ const S: Record<string, React.CSSProperties> = {
   cancelBtn: { background: 'var(--brd)', color: 'var(--txt3)', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
   cloneBtn:  { background: 'var(--brd)', color: 'var(--txt3)', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
   deleteBtn: { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
-  recurBanner: { background: 'var(--amber2)', border: '1px solid rgba(180,83,9,0.2)', borderRadius: 8, padding: '9px 14px', fontSize: 12, color: 'var(--amber)', marginBottom: 14 },
-  alertErr:  { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
-  alertOk:   { background: 'var(--accent2)', color: 'var(--accent)', border: '1px solid rgba(46,125,50,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
-  twoCol:    { display: 'grid', gridTemplateColumns: '1fr 340px', gap: 14, marginBottom: 8 },
-  card:      { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 10, padding: 16, marginBottom: 12 },
-  cardTitle: { fontSize: 12, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 },
-  fieldGroup:{ marginBottom: 12 },
-  label:     { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', display: 'block', marginBottom: 5 },
-  viewVal:   { fontSize: 13, color: 'var(--txt2)', lineHeight: 1.5 },
-  input:     { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
-  textarea:  { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 72, resize: 'vertical' },
-  grid2:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
-  chip:      { padding: '3px 10px', fontSize: 12, borderRadius: 20, border: '1px solid var(--input-brd)', cursor: 'pointer', background: 'transparent', color: 'var(--txt3)', fontFamily: 'inherit', transition: 'all 0.12s' },
+  recurBanner: { background: 'var(--amber2)', border: '1px solid rgba(180,83,9,0.2)', borderRadius: 8, padding: '9px 14px', fontSize: 12, color: 'var(--amber)', marginBottom: 16 },
+  alertErr:  { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 16 },
+  alertOk:   { background: 'var(--accent2)', color: 'var(--accent)', border: '1px solid rgba(46,125,50,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 16 },
+  
+  // New Layout Styles
+  pageStack: { display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 },
+  card:      { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 10, padding: 24 },
+  sectionHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16, marginBottom: 20, borderBottom: '1px solid var(--card-brd)' },
+  sectionTitle: { fontSize: 13, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.07em' },
+  multiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 16 },
+  
+  fieldGroup:{ marginBottom: 16 },
+  label:     { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', display: 'block', marginBottom: 6 },
+  viewVal:   { fontSize: 14, color: 'var(--txt2)', lineHeight: 1.5 },
+  input:     { width: '100%', padding: '8px 12px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 14, fontFamily: 'inherit', outline: 'none' },
+  textarea:  { width: '100%', padding: '8px 12px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 14, fontFamily: 'inherit', outline: 'none', minHeight: 80, resize: 'vertical' },
+  chip:      { padding: '4px 12px', fontSize: 13, borderRadius: 20, border: '1px solid var(--input-brd)', cursor: 'pointer', background: 'transparent', color: 'var(--txt3)', fontFamily: 'inherit', transition: 'all 0.12s' },
   chipSel:   { background: 'var(--accent)', color: 'var(--accent2)', borderColor: 'var(--accent)' },
-  addBtn:    { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer' },
-  infoGrid:  { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
-  infoLabel: { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 3 },
-  infoVal:   { fontSize: 12, color: 'var(--txt2)' },
-  th:        { textAlign: 'left', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', padding: '4px 8px', borderBottom: '1px solid var(--brd)' },
-  td:        { fontSize: 12, color: 'var(--txt3)', padding: '7px 8px', borderBottom: '1px solid var(--row-brd)', verticalAlign: 'middle' },
-  inlineInput: { background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 4, padding: '3px 7px', color: 'var(--txt)', fontSize: 12, fontFamily: 'inherit', width: '100%', outline: 'none' },
-  removeBtn: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, padding: '2px 4px' },
-  subCard:   { background: 'var(--input-bg)', border: '1px solid var(--card-brd)', borderRadius: 8, padding: '12px 14px' },
-  subNum:    { fontSize: 11, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase' },
-  emptyMsg:  { fontSize: 12, color: 'var(--txt3)', textAlign: 'center', padding: '16px 0' },
+  addBtn:    { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  th:        { textAlign: 'left', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', padding: '8px 12px', borderBottom: '1px solid var(--brd)' },
+  td:        { fontSize: 13, color: 'var(--txt3)', padding: '12px', borderBottom: '1px solid var(--row-brd)', verticalAlign: 'middle' },
+  inlineInput: { background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 4, padding: '6px 10px', color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', width: '100%', outline: 'none' },
+  removeBtn: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, padding: '4px 8px' },
+  subCard:   { background: 'var(--input-bg)', border: '1px solid var(--card-brd)', borderRadius: 8, padding: '16px' },
+  subNum:    { fontSize: 12, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase' },
+  emptyMsg:  { fontSize: 13, color: 'var(--txt3)', textAlign: 'center', padding: '24px 0' },
 }
