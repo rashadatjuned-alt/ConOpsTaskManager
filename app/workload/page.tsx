@@ -68,7 +68,6 @@ export default function Workload() {
   const nextWeek = new Date(); nextWeek.setDate(today.getDate() + 7)
   const thisMonth = today.getMonth(); const thisYear = today.getFullYear()
 
-  // ─── DATA SEGREGATION LOGIC ───
   const memberStats = useMemo(() => {
     return users.filter(u => u.role !== 'Admin').map((u, idx) => {
       const name = u.full_name || u.email
@@ -98,7 +97,6 @@ export default function Workload() {
     })
   }, [users, tasks, subtasks, projFilter, thresholds])
 
-  // Global metrics for the top cards
   const globalMetrics = useMemo(() => {
     const fTasks = projFilter === 'All' ? tasks : tasks.filter(t => t.project_name === projFilter)
     const mTasks = fTasks.map(t => ({ ...t, dateObj: t.end_date ? new Date(t.end_date) : null }))
@@ -118,8 +116,6 @@ export default function Workload() {
 
   return (
     <AppShell title="Workload Oversight">
-      
-      {/* ─── HEADER ─── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={() => router.push('/dashboard')} className="tv-btn" style={{ padding: '8px' }} title="Back to Dashboard"><ArrowLeft size={18}/></button>
@@ -131,7 +127,6 @@ export default function Workload() {
         <button className="tv-btn" onClick={() => setShowSettings(true)}><Settings size={14} style={{ marginRight: 6 }}/> Load Thresholds</button>
       </div>
 
-      {/* ─── TOOLBAR ─── */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)', border: '1px solid var(--brd)', borderRadius: 8, padding: '4px 10px' }}>
           <Filter size={14} color="var(--txt3)" />
@@ -140,7 +135,6 @@ export default function Workload() {
             {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
           </select>
         </div>
-
         <div style={{ marginLeft: 'auto', display: 'flex', background: 'var(--bg2)', padding: 4, borderRadius: 8, border: '1px solid var(--brd)' }}>
           {[
             { id: 'overview', icon: <LayoutGrid size={14}/>, label: 'Overview' },
@@ -154,7 +148,6 @@ export default function Workload() {
         </div>
       </div>
 
-      {/* ─── TOP METRICS (Clickable Modals) ─── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
         {[
           { id: 'Not Started', color: '#aaa', icon: <ListTodo size={18}/> },
@@ -164,7 +157,7 @@ export default function Workload() {
         ].map(card => {
           const count = globalMetrics[card.id as keyof typeof globalMetrics].length
           return (
-            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 16, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6, transition: '0.2s' }}>
+            <div key={card.id} onClick={() => count > 0 && setShowModal(card.id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 16, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6 }}>
               <div style={{ color: card.color, marginBottom: 8 }}>{card.icon}</div>
               <div style={{ fontSize: 24, fontWeight: 800 }}>{count}</div>
               <div style={{ fontSize: 11, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase' }}>{card.id}</div>
@@ -190,7 +183,6 @@ export default function Workload() {
         })}
       </div>
 
-      {/* ─── OVERVIEW TAB ─── */}
       {tab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {memberStats.map(m => (
@@ -210,7 +202,7 @@ export default function Workload() {
                 {STATUSES.map(status => (
                   <div key={status} style={{ background: 'var(--bg2)', padding: '8px 10px', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--txt2)' }}>
-                      <StatusDot status={status} size={6} /> {status}
+                      <StatusDot status={status} /> {status}
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>{m.counts[status]}</div>
                   </div>
@@ -221,7 +213,6 @@ export default function Workload() {
         </div>
       )}
 
-      {/* ─── HEATMAP TAB ─── */}
       {tab === 'heatmap' && (
         <div style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -259,7 +250,6 @@ export default function Workload() {
         </div>
       )}
 
-      {/* ─── CAPACITY TAB ─── */}
       {tab === 'capacity' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {memberStats.sort((a,b) => b.openTasks - a.openTasks).map((m, idx) => (
@@ -275,7 +265,7 @@ export default function Workload() {
                   <span>{m.load} bandwidth</span>
                 </div>
                 <div style={{ height: 8, background: 'var(--bg2)', borderRadius: 10, overflow: 'hidden' }}>
-                  <div style={{ width: `${Math.min((m.openTasks / thresholds.overload) * 100, 100)}%`, height: '100%', background: m.load === 'overload' ? '#ef4444' : m.load === 'heavy' ? '#EF9F27' : '#378ADD', transition: 'width 0.4s ease' }} />
+                  <div style={{ width: `${Math.min((m.openTasks / thresholds.overload) * 100, 100)}%`, height: '100%', background: m.load === 'overload' ? '#ef4444' : m.load === 'heavy' ? '#EF9F27' : '#378ADD' }} />
                 </div>
               </div>
               <div style={{ width: 100, textAlign: 'right' }}>
@@ -287,12 +277,11 @@ export default function Workload() {
         </div>
       )}
 
-      {/* ─── TEAM TASK MODAL (DETAIL POP-UP) ─── */}
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setShowModal(null)}>
           <div style={{ width: '90%', maxWidth: 900, background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--brd)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Team {showModal} Summary</div>
+              <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase' }}>Team {showModal} Summary</div>
               <button onClick={() => setShowModal(null)} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><X size={20}/></button>
             </div>
             <div style={{ padding: 0, maxHeight: '70vh', overflowY: 'auto' }}>
@@ -322,7 +311,7 @@ export default function Workload() {
                         <td style={{ textAlign: 'right', paddingRight: 20 }}>
                           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                             {[t.owner, ...(t.assignees || [])].filter(Boolean).map((name, i) => (
-                              <div key={i} title={name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg)', marginLeft: -8, cursor: 'default' }}>{ini(name)}</div>
+                              <div key={i} title={name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg)', marginLeft: -8 }}>{ini(name)}</div>
                             ))}
                           </div>
                         </td>
@@ -336,7 +325,6 @@ export default function Workload() {
         </div>
       )}
 
-      {/* ─── THRESHOLD SETTINGS MODAL ─── */}
       {showSettings && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
           <div className="card" style={{ width:400, padding:24 }}>
@@ -344,7 +332,6 @@ export default function Workload() {
               <div style={{ fontWeight:700, fontSize: 16 }}>Capacity Thresholds</div>
               <X size={18} cursor="pointer" onClick={() => setShowSettings(false)}/>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 20 }}>Adjust how many active tasks define team bandwidth.</div>
             {[
               { k:'normal', l:'Moderate Start', c: '#378ADD' },
               { k:'heavy', l:'Heavy Start', c: '#EF9F27' },
@@ -362,7 +349,6 @@ export default function Workload() {
           </div>
         </div>
       )}
-
     </AppShell>
   )
 }
