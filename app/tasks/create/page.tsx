@@ -133,13 +133,13 @@ export default function CreateTask() {
         .form-container {
           background: var(--card-bg);
           border: 1px solid var(--border);
-          border-radius: 16px;
+          border-radius: 12px;
           max-width: 700px;
           overflow: hidden;
         }
 
         .form-header {
-          padding: 32px;
+          padding: 24px;
           border-bottom: 1px solid var(--border);
           display: flex;
           align-items: center;
@@ -147,20 +147,20 @@ export default function CreateTask() {
         }
 
         .icon-sq {
-          width: 48px;
-          height: 48px;
+          width: 44px;
+          height: 44px;
           background: var(--accent-glow);
           color: var(--accent);
-          border-radius: 12px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
-        .form-title { font-size: 20px; font-weight: 800; color: var(--txt-main); margin: 0 0 4px 0; }
+        .form-title { font-size: 18px; font-weight: 800; color: var(--txt-main); margin: 0 0 4px 0; }
         .form-desc { font-size: 13px; color: var(--txt-muted); margin: 0; }
 
-        .project-form { padding: 32px; display: flex; flex-direction: column; gap: 20px; }
+        .project-form { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
         .form-row { display: flex; gap: 16px; }
         .form-row > * { flex: 1; }
 
@@ -171,34 +171,33 @@ export default function CreateTask() {
           background: var(--util-bg);
           border: 1px solid var(--border);
           color: var(--txt-main);
-          padding: 12px 16px;
-          border-radius: 10px;
+          padding: 10px 14px;
+          border-radius: 8px;
           font-size: 14px;
           outline: none;
-          transition: border-color 0.2s, box-shadow 0.2s;
+          transition: border-color 0.2s;
           font-family: inherit;
-          appearance: none; /* Smooths out default browser styling on selects */
+          appearance: none;
         }
 
         .input-group select {
           background-image: url('data:image/svg+xml;charset=US-ASCII,<svg width="12" height="8" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1.5L6 6.5L11 1.5" stroke="%2364748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
           background-repeat: no-repeat;
-          background-position: right 16px center;
-          padding-right: 40px;
+          background-position: right 14px center;
+          padding-right: 36px;
         }
 
         .input-group input:focus, .input-group textarea:focus, .input-group select:focus {
           border-color: var(--accent);
-          box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
         .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 24px; }
         
-        .btn-cancel { background: transparent; border: 1px solid var(--border); color: var(--txt-muted); padding: 10px 20px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .btn-cancel { background: transparent; border: 1px solid var(--border); color: var(--txt-muted); padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
         .btn-cancel:hover { background: var(--util-bg); color: var(--txt-main); }
 
-        .btn-submit { background: linear-gradient(135deg, var(--accent), var(--accent-dark)); border: none; color: white; padding: 10px 24px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px var(--accent-glow); }
-        .btn-submit:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .btn-submit { background: var(--accent); border: 1px solid var(--accent); color: white; padding: 10px 24px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+        .btn-submit:hover:not(:disabled) { opacity: 0.9; }
         .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
     </AppShell>
