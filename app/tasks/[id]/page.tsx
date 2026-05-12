@@ -500,7 +500,8 @@ export default function TaskDetail() {
             <table className="tv-table">
               <thead>
                 <tr>
-                  <th width="50">SL</th>
+                  {/* FIX: Replaced HTML 'width' attribute with React 'style' prop */}
+                  <th style={{ width: 50 }}>SL</th>
                   <th>Description</th>
                   <th>Link</th>
                   {editing && <th className="tv-action-col">Actions</th>}
@@ -554,8 +555,9 @@ export default function TaskDetail() {
             <table className="tv-table">
               <thead>
                 <tr>
-                  <th width="40">SL</th>
-                  <th width="35%">Title & Description</th>
+                  {/* FIX: Replaced HTML 'width' attributes with React 'style' props */}
+                  <th style={{ width: 40 }}>SL</th>
+                  <th style={{ width: '35%' }}>Title & Description</th>
                   <th>Start Date</th>
                   <th>End Date</th>
                   <th>Assigned To</th>
