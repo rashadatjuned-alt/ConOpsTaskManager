@@ -3,364 +3,154 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { StatusPill } from '@/components/ui/StatusPill'
+import { ArrowLeft, Calendar, Clock, CheckSquare, Target, Users } from 'lucide-react'
 
-const COLORS = [
-  '#3b82f6','#8b5cf6','#f59e0b','#22c55e',
-  '#ef4444','#06b6d4','#f97316','#ec4899',
-  '#6366f1','#14b8a6',
-]
-
-export default function EditProject() {
+export default function ProjectDetail({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const { id } = useParams<{ id: string }>()
-
-  const [project,     setProject]     = useState<any>(null)
-  const [allUsers,    setAllUsers]    = useState<any[]>([])
-  const [tasks,       setTasks]       = useState<any[]>([])
-  const [subtasks,    setSubtasks]    = useState<any[]>([])
-  const [myRole,      setMyRole]      = useState('')
-  const [loading,     setLoading]     = useState(true)
-  const [saving,      setSaving]      = useState(false)
-  const [error,       setError]       = useState('')
-  const [success,     setSuccess]     = useState('')
-
-  // Edit fields
-  const [name,        setName]        = useState('')
-  const [desc,        setDesc]        = useState('')
-  const [color,       setColor]       = useState('#3b82f6')
-  const [members,     setMembers]     = useState<string[]>([])   // user ids
-
-  // Impact preview
-  const [showImpact,  setShowImpact]  = useState(false)
-  const [removedUsers,setRemovedUsers]= useState<any[]>([])      // users being removed
-  const [impactTasks, setImpactTasks] = useState<any[]>([])      // tasks affected
-  const [impactSubs,  setImpactSubs]  = useState<any[]>([])      // subtasks affected
+  const [project, setProject] = useState<any>(null)
+  const [tasks, setTasks] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const load = async () => {
+    const loadData = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
-      const { data: u } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
-      setMyRole(u?.role || '')
 
-      const [{ data: proj }, { data: users }, { data: t }, { data: s }] = await Promise.all([
-        supabase.from('Projects').select('*').eq('id', id).single(),
-        supabase.from('Users').select('id,full_name,email,role').neq('role', 'Admin').order('full_name'),
-        supabase.from('Tasks').select('*'),
-        supabase.from('Subtasks').select('*'),
-      ])
+      // Fetch Project
+      const { data: pData } = await supabase.from('Projects').select('*').eq('id', params.id).single()
+      if (!pData) {
+        router.push('/my-projects')
+        return
+      }
+      setProject(pData)
 
-      if (!proj) { setLoading(false); return }
-
-      setProject(proj)
-      setName(proj.name || '')
-      setDesc(proj.description || '')
-      setColor(proj.color_code || '#3b82f6')
-      setMembers(proj.members || [])
-      setAllUsers(users || [])
-
-      // Only tasks for this project
-      const projTasks = (t || []).filter((tk: any) => tk.project_name === proj.name)
-      setTasks(projTasks)
-      const projTaskIds = projTasks.map((tk: any) => tk.id)
-      setSubtasks((s || []).filter((sub: any) => projTaskIds.includes(sub.parent_task_id)))
-
+      // Fetch Tasks for this Project
+      const { data: tData } = await supabase.from('Tasks').select('*').eq('project_name', pData.name).order('end_date')
+      setTasks(tData || [])
       setLoading(false)
     }
-    load()
-  }, [id])
+    loadData()
+  }, [params.id, router])
 
-  const toggleMember = (uid: string) => {
-    setMembers(prev => prev.includes(uid) ? prev.filter(m => m !== uid) : [...prev, uid])
-  }
+  if (loading) return <AppShell title="Project Details">Loading project data...</AppShell>
 
-  // Calculate impact whenever members change
-  useEffect(() => {
-    if (!project) return
-    const originalMembers: string[] = project.members || []
-    const removed = originalMembers.filter((uid: string) => !members.includes(uid))
-    const removedUserObjs = allUsers.filter((u: any) => removed.includes(u.id))
-    const removedNames = removedUserObjs.map((u: any) => u.full_name || u.email)
-
-    // Find tasks assigned to removed users
-    const affectedTasks = tasks.filter((t: any) => {
-      const assignees: string[] = Array.isArray(t.assignees) ? t.assignees : (t.owner ? [t.owner] : [])
-      return assignees.some((a: string) => removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase()))
-    })
-
-    // Find subtasks assigned to removed users
-    const affectedSubs = subtasks.filter((s: any) => {
-      const assignees: string[] = Array.isArray(s.assignees) ? s.assignees : (s.owner ? [s.owner] : [])
-      return assignees.some((a: string) => removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase()))
-    })
-
-    setRemovedUsers(removedUserObjs)
-    setImpactTasks(affectedTasks)
-    setImpactSubs(affectedSubs)
-  }, [members, project, tasks, subtasks, allUsers])
-
-  const handleSave = async () => {
-    if (!name.trim()) { setError('Project name is required.'); return }
-    setError('')
-
-    // Show impact warning if removing assignees with tasks
-    if (removedUsers.length > 0 && (impactTasks.length > 0 || impactSubs.length > 0) && !showImpact) {
-      setShowImpact(true)
-      return
-    }
-
-    setSaving(true)
-    try {
-      const oldName = project.name
-
-      // 1. Update project
-      await supabase.from('Projects').update({
-        name: name.trim(),
-        description: desc.trim(),
-        color_code: color,
-        members,
-      }).eq('id', id)
-
-      // 2. If name changed, update all tasks referencing this project
-      if (name.trim() !== oldName) {
-        await supabase.from('Tasks')
-          .update({ project_name: name.trim() })
-          .eq('project_name', oldName)
-      }
-
-      // 3. Remove unassigned users from tasks
-      if (removedUsers.length > 0) {
-        const removedNames = removedUsers.map((u: any) => u.full_name || u.email)
-
-        for (const task of impactTasks) {
-          const currentAssignees: string[] = Array.isArray(task.assignees)
-            ? task.assignees
-            : (task.owner ? task.owner.split(',').map((s: string) => s.trim()) : [])
-
-          const newAssignees = currentAssignees.filter(
-            (a: string) => !removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase())
-          )
-          await supabase.from('Tasks').update({
-            assignees: newAssignees,
-            owner: newAssignees.join(', '),
-          }).eq('id', task.id)
-        }
-
-        for (const sub of impactSubs) {
-          const currentAssignees: string[] = Array.isArray(sub.assignees)
-            ? sub.assignees
-            : (sub.owner ? [sub.owner] : [])
-
-          const newAssignees = currentAssignees.filter(
-            (a: string) => !removedNames.some((n: string) => a.toLowerCase() === n.toLowerCase())
-          )
-          await supabase.from('Subtasks').update({
-            assignees: newAssignees,
-            owner: newAssignees.join(', '),
-          }).eq('id', sub.id)
-        }
-      }
-
-      setSuccess('✅ Project updated successfully!')
-      setShowImpact(false)
-      setTimeout(() => router.push('/all-projects'), 1500)
-    } catch (e: any) {
-      setError(e.message)
-    }
-    setSaving(false)
-  }
-
-  if (myRole && myRole === 'Team Member') return (
-    <AppShell title="Edit Project">
-      <div style={{ color: 'var(--red)', padding: 20 }}>Access denied — Managers and Admins only.</div>
-    </AppShell>
-  )
-
-  if (loading) return <AppShell title="Edit Project"><div style={{ padding: 40, color: 'var(--txt3)', textAlign: 'center' }}>Loading...</div></AppShell>
-  if (!project) return <AppShell title="Edit Project"><div style={{ color: 'var(--red)', padding: 20 }}>Project not found.</div></AppShell>
-
-  const hasImpact = removedUsers.length > 0 && (impactTasks.length > 0 || impactSubs.length > 0)
+  // Metrics Calculation
+  const completedTasks = tasks.filter(t => t.status === 'Completed').length
+  const progress = tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100)
+  
+  // Get unique assignees across all tasks in this project
+  const allAssignees = new Set<string>()
+  tasks.forEach(t => {
+    if (t.owner) allAssignees.add(t.owner)
+    if (t.assignees) t.assignees.forEach((a: string) => allAssignees.add(a))
+  })
 
   return (
-    <AppShell title={`Edit: ${project.name}`}>
-      <div style={{ maxWidth: 720 }}>
+    <AppShell title="Project Command Center">
+      
+      {/* Back Button & Breadcrumb */}
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.push('/my-projects')} className="tv-btn" style={{ padding: '8px' }}>
+          <ArrowLeft size={18} />
+        </button>
+        <span style={{ fontSize: 13, color: 'var(--txt-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+          Portfolio / {project.name}
+        </span>
+      </div>
 
-        {error   && <div style={S.alertErr}>{error}</div>}
-        {success && <div style={S.alertOk}>{success}</div>}
-
-        {/* Impact warning banner */}
-        {hasImpact && !showImpact && (
-          <div style={S.alertWarn}>
-            ⚠️ Removing <strong>{removedUsers.map((u: any) => u.full_name).join(', ')}</strong> will affect{' '}
-            {impactTasks.length > 0 && <strong>{impactTasks.length} task{impactTasks.length !== 1 ? 's' : ''}</strong>}
-            {impactTasks.length > 0 && impactSubs.length > 0 && ' and '}
-            {impactSubs.length > 0 && <strong>{impactSubs.length} subtask{impactSubs.length !== 1 ? 's' : ''}</strong>}
-            {' '}in this project. They will be unassigned automatically.
+      {/* ─── EXECUTIVE SUMMARY HEADER ─── */}
+      <div className="header-card">
+        <div className="header-main">
+          <div className="title-row">
+            <h1 className="project-title">{project.name}</h1>
+            <div className="status-badge">Active Deployment</div>
           </div>
-        )}
-
-        {/* Project Details */}
-        <div style={S.card}>
-          <div style={S.cardTitle}>Project Details</div>
-
-          <div style={S.fg}>
-            <label style={S.lbl}>Project Name *</label>
-            <input style={S.input} value={name} onChange={e => setName(e.target.value)} placeholder="Project name" />
-          </div>
-
-          <div style={S.fg}>
-            <label style={S.lbl}>Description</label>
-            <textarea style={S.textarea} value={desc} onChange={e => setDesc(e.target.value)} placeholder="What is this project about?" />
-          </div>
-
-          <div style={S.fg}>
-            <label style={S.lbl}>Color Tag</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-              {COLORS.map(c => (
-                <button key={c} type="button" onClick={() => setColor(c)} style={{
-                  width: 30, height: 30, borderRadius: '50%', background: c,
-                  border: 'none', cursor: 'pointer',
-                  outline: color === c ? `3px solid ${c}` : '2px solid transparent',
-                  outlineOffset: 3, transition: 'outline 0.15s',
-                }} />
-              ))}
-            </div>
+          <p className="project-desc">{project.description || 'No detailed description provided for this project.'}</p>
+          
+          <div className="meta-row">
+            <div className="meta-pill"><Calendar size={14} /> Start: {project.start_date || 'TBD'}</div>
+            <div className="meta-pill"><Clock size={14} /> End: {project.end_date || 'TBD'}</div>
+            <div className="meta-pill"><Users size={14} /> {allAssignees.size} Team Members</div>
           </div>
         </div>
 
-        {/* Team Members */}
-        <div style={S.card}>
-          <div style={S.cardTitle}>Project Team</div>
-          <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
-            These people can be assigned to tasks within this project. Removing someone will unassign them from all tasks and subtasks.
+        <div className="header-metrics">
+          <div className="metric-box">
+            <div className="m-label">Overall Progress</div>
+            <div className="m-val">{progress}%</div>
+            <div className="progress-track"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
           </div>
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-            {allUsers.map((u: any) => {
-              const sel      = members.includes(u.id)
-              const wasHere  = (project.members || []).includes(u.id)
-              const isNew    = sel && !wasHere
-              const isRemoved= !sel && wasHere
-              const ini      = (u.full_name || u.email || '?').split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase()
-
-              return (
-                <button key={u.id} type="button" onClick={() => toggleMember(u.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    padding: '5px 12px 5px 7px',
-                    borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
-                    fontSize: 12, fontWeight: 500, transition: 'all 0.15s',
-                    border: isRemoved
-                      ? '1.5px dashed var(--red)'
-                      : sel ? '1.5px solid var(--accent)' : '1.5px solid var(--brd2)',
-                    background: isRemoved
-                      ? 'var(--red2)'
-                      : sel ? 'var(--accent2)' : 'var(--bg3)',
-                    color: isRemoved ? 'var(--red)' : sel ? 'var(--accent)' : 'var(--txt2)',
-                  }}>
-                  <div style={{
-                    width: 22, height: 22, borderRadius: '50%', fontSize: 9,
-                    fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: isRemoved ? 'rgba(197,34,31,0.15)' : sel ? 'var(--accent)' : 'var(--bg2)',
-                    color: isRemoved ? 'var(--red)' : sel ? 'var(--accent2)' : 'var(--txt3)',
-                    flexShrink: 0,
-                  }}>{ini}</div>
-                  {isRemoved ? '✕ ' : sel ? '✓ ' : ''}{u.full_name || u.email}
-                  {isNew     && <span style={{ fontSize: 9, background: 'var(--accent)', color: 'var(--accent2)', padding: '1px 5px', borderRadius: 8, marginLeft: 2 }}>NEW</span>}
-                  {isRemoved && <span style={{ fontSize: 9, background: 'var(--red)', color: '#fff', padding: '1px 5px', borderRadius: 8, marginLeft: 2 }}>REMOVING</span>}
-                </button>
-              )
-            })}
+          <div className="metric-box">
+            <div className="m-label">Task Completion</div>
+            <div className="m-val" style={{ color: 'var(--txt-main)' }}>{completedTasks} <span style={{ fontSize: 16, color: 'var(--txt-muted)' }}>/ {tasks.length}</span></div>
           </div>
-
-          {members.length > 0 && (
-            <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 10 }}>
-              {members.length} member{members.length !== 1 ? 's' : ''} in project team
-            </div>
-          )}
-        </div>
-
-        {/* Impact Preview */}
-        {hasImpact && (
-          <div style={{ ...S.card, border: '1px solid rgba(197,34,31,0.3)', background: 'var(--red2)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              ⚠️ Impact Preview — Assignees Being Removed
-            </div>
-
-            <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 12 }}>
-              Removing: <strong>{removedUsers.map((u: any) => u.full_name || u.email).join(', ')}</strong>
-            </div>
-
-            {impactTasks.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)', marginBottom: 6 }}>
-                  Affected Tasks ({impactTasks.length})
-                </div>
-                {impactTasks.map((t: any) => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--card-bg)', borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
-                    <span style={{ color: 'var(--red)' }}>📋</span>
-                    <span style={{ flex: 1, color: 'var(--txt)', fontWeight: 500 }}>{t.topic}</span>
-                    <span style={{ color: 'var(--txt3)', fontSize: 11 }}>
-                      {(Array.isArray(t.assignees) ? t.assignees : [t.owner]).filter(Boolean).join(', ')}
-                    </span>
-                    <span style={{ fontSize: 10, background: 'var(--amber2)', color: 'var(--amber)', padding: '1px 6px', borderRadius: 8 }}>will be unassigned</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {impactSubs.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)', marginBottom: 6 }}>
-                  Affected Subtasks ({impactSubs.length})
-                </div>
-                {impactSubs.map((s: any) => (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--card-bg)', borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
-                    <span style={{ color: 'var(--txt3)' }}>↳</span>
-                    <span style={{ flex: 1, color: 'var(--txt)' }}>{s.topic}</span>
-                    <span style={{ fontSize: 10, background: 'var(--amber2)', color: 'var(--amber)', padding: '1px 6px', borderRadius: 8 }}>will be unassigned</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Action buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 32 }}>
-          <button onClick={() => router.back()}
-            style={S.cancelBtn}>
-            Cancel
-          </button>
-          {hasImpact ? (
-            <button onClick={handleSave} disabled={saving}
-              style={{ ...S.dangerBtn, opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Saving...' : `⚠️ Confirm & Save (${impactTasks.length + impactSubs.length} items affected)`}
-            </button>
-          ) : (
-            <button onClick={handleSave} disabled={saving}
-              style={{ ...S.saveBtn, opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          )}
         </div>
       </div>
+
+      {/* ─── TASK LEDGER ─── */}
+      <div className="ledger-section">
+        <h3 className="section-title"><Target size={16} /> Associated Tasks</h3>
+        <div className="task-grid">
+          {tasks.map(t => (
+            <div key={t.id} className="task-row" onClick={() => router.push(`/tasks/${t.id}`)}>
+              <div className="t-main">
+                <div className="t-topic">{t.topic}</div>
+                <div className="t-owner">Owner: {t.owner || 'Unassigned'}</div>
+              </div>
+              <div className="t-meta">
+                <div className="t-date">{t.end_date || 'No Date'}</div>
+                <StatusPill status={t.status} />
+              </div>
+            </div>
+          ))}
+          {tasks.length === 0 && <div className="empty-state">No tasks have been assigned to this project yet.</div>}
+        </div>
+      </div>
+
+      <style jsx>{`
+        .header-card {
+          background: var(--card-bg);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 32px;
+          display: flex;
+          gap: 40px;
+          margin-bottom: 32px;
+        }
+
+        .header-main { flex: 2; }
+        
+        .title-row { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+        .project-title { font-size: 28px; font-weight: 900; color: var(--txt-main); margin: 0; }
+        .status-badge { background: var(--nav-active); color: var(--accent); padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+        
+        .project-desc { font-size: 14px; color: var(--txt-muted); line-height: 1.6; margin-bottom: 24px; max-width: 600px; }
+        
+        .meta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+        .meta-pill { display: flex; align-items: center; gap: 8px; background: var(--util-bg); border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--txt-muted); }
+
+        .header-metrics { flex: 1; display: flex; flexDirection: column; gap: 16px; border-left: 1px solid var(--border); padding-left: 40px; }
+        .metric-box { background: var(--util-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border); }
+        .m-label { font-size: 11px; font-weight: 800; color: var(--txt-label); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .m-val { font-size: 32px; font-weight: 900; color: var(--accent); line-height: 1; margin-bottom: 12px; }
+        .progress-track { height: 6px; background: var(--card-bg); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+        .progress-fill { height: 100%; background: var(--accent); border-radius: 10px; }
+
+        .section-title { font-size: 14px; font-weight: 800; color: var(--txt-main); margin-bottom: 16px; display: flex; align-items: center; gap: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .task-grid { display: flex; flex-direction: column; gap: 8px; }
+        .task-row { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all 0.2s; }
+        .task-row:hover { background: var(--nav-hover); border-color: var(--txt-label); transform: translateX(4px); }
+        
+        .t-topic { font-size: 15px; font-weight: 700; color: var(--txt-main); margin-bottom: 4px; }
+        .t-owner { font-size: 12px; color: var(--txt-muted); font-weight: 600; }
+        .t-meta { display: flex; align-items: center; gap: 24px; }
+        .t-date { font-size: 13px; color: var(--txt-muted); font-weight: 600; }
+        
+        .empty-state { padding: 40px; text-align: center; background: var(--card-bg); border: 1px dashed var(--border); border-radius: 12px; color: var(--txt-muted); font-size: 13px; font-weight: 600; }
+      `}</style>
     </AppShell>
   )
-}
-
-const S: Record<string, React.CSSProperties> = {
-  alertErr:  { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 14 },
-  alertOk:   { background: 'var(--accent2)', color: 'var(--accent)', border: '1px solid rgba(46,125,50,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 14 },
-  alertWarn: { background: 'var(--amber2)', color: 'var(--amber)', border: '1px solid rgba(180,83,9,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 14, lineHeight: 1.6 },
-  card:      { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 12, padding: 18, marginBottom: 14 },
-  cardTitle: { fontSize: 10, fontWeight: 700, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 },
-  fg:        { marginBottom: 14 },
-  lbl:       { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', display: 'block', marginBottom: 5 },
-  input:     { width: '100%', padding: '8px 11px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 7, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
-  textarea:  { width: '100%', padding: '8px 11px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 7, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 80, resize: 'vertical' },
-  saveBtn:   { background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 8, padding: '8px 20px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
-  cancelBtn: { background: 'var(--bg3)', color: 'var(--txt2)', border: '1px solid var(--brd2)', borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
-  dangerBtn: { background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 20px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
 }
