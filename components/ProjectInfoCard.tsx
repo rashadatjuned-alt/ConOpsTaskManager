@@ -8,8 +8,8 @@ interface ProjectInfoCardProps {
   tasks: any[];
   subtasks: any[];
   myRole: string;
-  allUsers: any[];           // ← NEW: pass your full Users list here
-  onClose?: () => void;      // ← NEW: optional close handler
+  allUsers?: any[];          // ← made optional (safe)
+  onClose?: () => void;
 }
 
 export default function ProjectInfoCard({
@@ -17,12 +17,12 @@ export default function ProjectInfoCard({
   tasks,
   subtasks,
   myRole,
-  allUsers,
+  allUsers = [],            // ← default empty array
   onClose,
 }: ProjectInfoCardProps) {
   const router = useRouter();
 
-  // ── Calculations ─────────────────────────────────────────────────────
+  // Calculations
   const { startDate, endDate, totalTasks, totalSubtasks, progress } = useMemo(() => {
     const validTasks = tasks.filter((t) => t.start_date && t.end_date);
 
@@ -59,17 +59,18 @@ export default function ProjectInfoCard({
 
   const canEdit = myRole === 'Admin' || myRole === 'Manager';
 
-  const handleEdit = () => {
-    router.push(`/edit-project/${project.id}`);
-  };
+  const handleEdit = () => router.push(`/edit-project/${project.id}`);
 
   const handleClose = () => {
     if (onClose) onClose();
     else router.back();
   };
 
-  // Real user lookup
-  const getUser = (userId: string) => allUsers.find((u: any) => u.id === userId) || { full_name: userId, email: userId };
+  // Fallback for team members (shows ID if no allUsers)
+  const getUserName = (userId: string) => {
+    const user = allUsers.find((u: any) => u.id === userId);
+    return user?.full_name || user?.email || userId;
+  };
 
   const teamMembers = project.members || [];
   const displayedMembers = teamMembers.slice(0, 4);
@@ -104,7 +105,6 @@ export default function ProjectInfoCard({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 10,
         }}
       >
         ×
@@ -112,28 +112,9 @@ export default function ProjectInfoCard({
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <div
-          style={{
-            width: 26,
-            height: 26,
-            background: project.color_code || '#3b82f6',
-            borderRadius: 8,
-            flexShrink: 0,
-          }}
-        />
-        <h2 style={{ fontSize: 19, fontWeight: 700, margin: 0, flex: 1 }}>
-          {project.name}
-        </h2>
-        <span
-          style={{
-            background: project.color_code || '#3b82f6',
-            color: '#fff',
-            padding: '3px 9px',
-            borderRadius: 9999,
-            fontSize: 11.5,
-            fontWeight: 600,
-          }}
-        >
+        <div style={{ width: 26, height: 26, background: project.color_code || '#3b82f6', borderRadius: 8 }} />
+        <h2 style={{ fontSize: 19, fontWeight: 700, margin: 0, flex: 1 }}>{project.name}</h2>
+        <span style={{ background: project.color_code || '#3b82f6', color: '#fff', padding: '3px 9px', borderRadius: 9999, fontSize: 11.5, fontWeight: 600 }}>
           {project.color_code || '#3b82f6'}
         </span>
       </div>
@@ -168,89 +149,4 @@ export default function ProjectInfoCard({
           <div style={{ fontSize: 11, color: '#64748b' }}>TASKS</div>
           <div style={{ fontSize: 26, fontWeight: 700 }}>{totalTasks}</div>
         </div>
-        <div style={{ width: 1, background: 'var(--brd2)', alignSelf: 'stretch', margin: '0 12px' }} />
-        <div style={{ textAlign: 'center', flex: 1 }}>
-          <div style={{ fontSize: 11, color: '#64748b' }}>SUBTASKS</div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>{totalSubtasks}</div>
-        </div>
-      </div>
-
-      {/* Team - REAL NAMES */}
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
-          👥 TEAM ({teamMembers.length})
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {displayedMembers.map((memberId: string) => {
-            const user = getUser(memberId);
-            const name = user.full_name || user.email || memberId;
-            const ini = name.split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase();
-
-            return (
-              <div
-                key={memberId}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 9999,
-                  fontSize: 12,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  border: '1px solid #e2e8f0',
-                  background: '#f8fafc',
-                }}
-              >
-                <div
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: '50%',
-                    background: '#8b5cf6',
-                    color: '#fff',
-                    fontSize: 9,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {ini}
-                </div>
-                {name}
-              </div>
-            );
-          })}
-          {teamMembers.length > 4 && (
-            <div style={{ padding: '4px 10px', borderRadius: 9999, fontSize: 12, color: '#64748b', paddingTop: 5 }}>
-              +{teamMembers.length - 4} more
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Edit Button */}
-      {canEdit && (
-        <button
-          onClick={handleEdit}
-          style={{
-            marginTop: 20,
-            width: '100%',
-            background: '#3b82f6',
-            color: '#fff',
-            border: 'none',
-            padding: 11,
-            borderRadius: 10,
-            fontWeight: 600,
-            fontSize: 14,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-          }}
-        >
-          ✏️ Edit Project
-        </button>
-      )}
-    </div>
-  );
-}
+        <div style={{ width: 1,
