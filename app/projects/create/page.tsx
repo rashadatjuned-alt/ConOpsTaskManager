@@ -72,13 +72,13 @@ export default function CreateProject() {
         .form-container {
           background: var(--card-bg);
           border: 1px solid var(--border);
-          border-radius: 16px;
+          border-radius: 12px;
           max-width: 600px;
           overflow: hidden;
         }
 
         .form-header {
-          padding: 32px;
+          padding: 24px;
           border-bottom: 1px solid var(--border);
           display: flex;
           align-items: center;
@@ -86,20 +86,20 @@ export default function CreateProject() {
         }
 
         .icon-sq {
-          width: 48px;
-          height: 48px;
+          width: 44px;
+          height: 44px;
           background: var(--accent-glow);
           color: var(--accent);
-          border-radius: 12px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
-        .form-title { font-size: 20px; font-weight: 800; color: var(--txt-main); margin: 0 0 4px 0; }
+        .form-title { font-size: 18px; font-weight: 800; color: var(--txt-main); margin: 0 0 4px 0; }
         .form-desc { font-size: 13px; color: var(--txt-muted); margin: 0; }
 
-        .project-form { padding: 32px; display: flex; flex-direction: column; gap: 24px; }
+        .project-form { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
         .form-row { display: flex; gap: 16px; }
         .form-row > * { flex: 1; }
 
@@ -110,17 +110,16 @@ export default function CreateProject() {
           background: var(--util-bg);
           border: 1px solid var(--border);
           color: var(--txt-main);
-          padding: 12px 16px;
-          border-radius: 10px;
+          padding: 10px 14px;
+          border-radius: 8px;
           font-size: 14px;
           outline: none;
-          transition: border-color 0.2s, box-shadow 0.2s;
+          transition: border-color 0.2s;
           font-family: inherit;
         }
 
         .input-group input:focus, .input-group textarea:focus {
           border-color: var(--accent);
-          box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
         .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
@@ -130,25 +129,24 @@ export default function CreateProject() {
           border: 1px solid var(--border);
           color: var(--txt-muted);
           padding: 10px 20px;
-          border-radius: 10px;
+          border-radius: 8px;
           font-weight: 700;
           cursor: pointer;
-          transition: 0.2s;
+          transition: background 0.2s;
         }
         .btn-cancel:hover { background: var(--util-bg); color: var(--txt-main); }
 
         .btn-submit {
-          background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-          border: none;
+          background: var(--accent);
+          border: 1px solid var(--accent);
           color: white;
           padding: 10px 24px;
-          border-radius: 10px;
+          border-radius: 8px;
           font-weight: 700;
           cursor: pointer;
-          transition: 0.2s;
-          box-shadow: 0 4px 12px var(--accent-glow);
+          transition: opacity 0.2s;
         }
-        .btn-submit:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .btn-submit:hover:not(:disabled) { opacity: 0.9; }
         .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
     </AppShell>
