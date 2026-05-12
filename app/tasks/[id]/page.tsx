@@ -4,523 +4,644 @@ import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
-import { StatusPill } from '@/components/ui/StatusPill'
-import { Trash2, Plus, ArrowLeft, Copy, Edit2, X } from 'lucide-react'
-import type { Status } from '@/types'
+import type { Status, Resource } from '@/types'
 
-const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
-const TYPES = ['One-time','Weekly','Monthly','Quarterly','Semi-annually','Annually']
+const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
+const TYPES    = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
 
-function shiftDate(dateStr: string, days: number): string {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
+const STATUS_DOT: Record<string, string> = {
+  'Not Started': 'var(--txt3)', 'In Progress': '#3b82f6',
+  'On-Hold': '#f59e0b', 'Completed': '#22c55e',
+}
+const STATUS_PILL: Record<string, { bg: string; color: string }> = {
+  'Not Started': { bg: 'var(--pill-ns-bg)', color: 'var(--pill-ns-txt)' },
+  'In Progress': { bg: 'var(--blue2)', color: 'var(--blue)' },
+  'On-Hold':     { bg: 'var(--amber2)', color: 'var(--amber)' },
+  'Completed':   { bg: 'var(--accent2)', color: 'var(--accent)' },
 }
 
-function shiftMonth(dateStr: string, months: number): string {
-  const d = new Date(dateStr)
-  d.setMonth(d.getMonth() + months)
-  return d.toISOString().split('T')[0]
+function Pill({ status }: { status: string }) {
+  const s = STATUS_PILL[status] || STATUS_PILL['Not Started']
+  return <span style={{ background: s.bg, color: s.color, fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500 }}>{status}</span>
 }
 
-function nextDate(start: string, end: string, type: string): { start: string; end: string } {
+function nextRecurrence(start: string, end: string, type: string) {
   const duration = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 864e5)
-  let newStart = start
-  if (type === 'Weekly')       newStart = shiftDate(start, 7)
-  else if (type === 'Monthly') newStart = shiftMonth(start, 1)
-  else if (type === 'Quarterly') newStart = shiftMonth(start, 3)
-  else if (type === 'Semi-annually') newStart = shiftMonth(start, 6)
-  else if (type === 'Annually') newStart = shiftMonth(start, 12)
-  return { start: newStart, end: shiftDate(newStart, duration) }
+  const d = new Date(start)
+  if (type === 'Weekly') d.setDate(d.getDate() + 7)
+  else if (type === 'Monthly') d.setMonth(d.getMonth() + 1)
+  else if (type === 'Quarterly') d.setMonth(d.getMonth() + 3)
+  else if (type === 'Semi-annually') d.setMonth(d.getMonth() + 6)
+  else if (type === 'Annually') d.setFullYear(d.getFullYear() + 1)
+  const newStart = d.toISOString().split('T')[0]
+  const newEnd = new Date(d.getTime() + duration * 864e5).toISOString().split('T')[0]
+  return { start: newStart, end: newEnd }
 }
 
-interface Subtask {
-  id: string
-  topic: string
-  description?: string
-  owner?: string
-  start_date: string
-  end_date: string
-  status: Status
-  isNew?: boolean
+function assigneesFromRow(row: any): string[] {
+  if (Array.isArray(row.assignees) && row.assignees.length > 0) return row.assignees
+  if (row.owner) return row.owner.split(',').map((s: string) => s.trim()).filter(Boolean)
+  return []
 }
 
 export default function TaskDetail() {
-  const router = useRouter()
-  const { id } = useParams<{ id: string }>()
-  const [isEditing,      setIsEditing]      = useState(false)
-  const [task,           setTask]           = useState<any>(null)
-  const [subtasks,       setSubtasks]       = useState<Subtask[]>([])
-  const [projectMembers, setProjectMembers] = useState<any[]>([])
-  const [loading,        setLoading]        = useState(true)
-  const [saving,         setSaving]         = useState(false)
-  const [deleting,       setDeleting]       = useState(false)
-  const [cloning,        setCloning]        = useState(false)
-  const [error,          setError]          = useState('')
-  const [success,        setSuccess]        = useState('')
-  const [newComment,     setNewComment]     = useState('')
-  const [comments,       setComments]       = useState<any[]>([])
-  const [myUser,         setMyUser]         = useState<any>(null)
-  const [myRole,         setMyRole]         = useState('')
+  const router   = useRouter()
+  const { id }   = useParams<{ id: string }>()
+  const [task,         setTask]         = useState<any>(null)
+  const [subtasks,     setSubtasks]     = useState<any[]>([])
+  const [projectTeam,  setProjectTeam]  = useState<any[]>([])   // {id, full_name} — project members
+  const [myRole,       setMyRole]       = useState('')
+  const [editing,      setEditing]      = useState(false)
+  const [saving,       setSaving]       = useState(false)
+  const [cloning,      setCloning]      = useState(false)
+  const [deleting,     setDeleting]     = useState(false)
+  const [error,        setError]        = useState('')
+  const [success,      setSuccess]      = useState('')
+  const [loading,      setLoading]      = useState(true)
 
-  const loadData = async () => {
-    setLoading(true)
+  // local edit state
+  const [editTask,     setEditTask]     = useState<any>(null)
+  const [editSubtasks, setEditSubtasks] = useState<any[]>([])
+  const [resources,    setResources]    = useState<Resource[]>([])
+
+  const loadTask = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
-    const { data: me } = await supabase.from('Users').select('*').eq('id', session?.user.id).single()
-    setMyUser(me)
+    if (!session) return
+    const { data: me } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
     setMyRole(me?.role || 'Team Member')
 
-    const { data: taskData } = await supabase.from('Tasks').select('*').eq('id', id).single()
-    setTask(taskData)
+    const [{ data: t }, { data: s }] = await Promise.all([
+      supabase.from('Tasks').select('*').eq('id', id).single(),
+      supabase.from('Subtasks').select('*').eq('parent_task_id', id).order('id'),
+    ])
 
-    const { data: subData, error: subErr } = await supabase.from('Subtasks').select('*').eq('parent_task_id', Number(id)).order('id')
-    if (subErr) setError(`Failed to load subtasks: ${subErr.message}`)
-    setSubtasks(subData || [])
+    if (!t) { setLoading(false); return }
+    setTask(t)
+    setSubtasks(s || [])
+    setResources(Array.isArray(t.resources) ? t.resources : [])
 
-    if (taskData?.project_name) {
-      const { data: proj } = await supabase.from('Projects').select('members').eq('name', taskData.project_name).single()
+    // Load project team
+    if (t.project_name) {
+      const { data: proj } = await supabase.from('Projects').select('members').eq('name', t.project_name).single()
       if (proj?.members?.length) {
-        const { data: users } = await supabase.from('Users').select('id,full_name,email,role').in('id', proj.members)
-        setProjectMembers((users || []).filter((u: any) => u.role !== 'Admin'))
+        const { data: users } = await supabase.from('Users').select('id,full_name,role').in('id', proj.members)
+        setProjectTeam((users || []).filter((u: any) => u.role !== 'Admin'))
       } else {
-        const { data: users } = await supabase.from('Users').select('id,full_name,email,role')
-        setProjectMembers((users || []).filter((u: any) => u.role !== 'Admin'))
+        const { data: users } = await supabase.from('Users').select('id,full_name,role')
+        setProjectTeam((users || []).filter((u: any) => u.role !== 'Admin'))
       }
-    } else {
-      const { data: users } = await supabase.from('Users').select('id,full_name,email,role')
-      setProjectMembers((users || []).filter((u: any) => u.role !== 'Admin'))
     }
     setLoading(false)
+  }, [id])
+
+  useEffect(() => { loadTask() }, [loadTask])
+
+  const startEdit = () => {
+    setEditTask({ ...task })
+    setEditSubtasks(subtasks.map((s: any) => ({ ...s })))
+    setEditing(true)
+    setError('')
   }
 
-  useEffect(() => { loadData() }, [id])
+  const cancelEdit = () => {
+    setEditing(false)
+    setEditTask(null)
+    setEditSubtasks([])
+    setError('')
+  }
 
-  const canDelete = myRole === 'Admin' || myRole === 'Manager'
+  const canManage = myRole === 'Admin' || myRole === 'Manager'
 
-  const updateTask = useCallback((field: string, value: string) =>
-    setTask((prev: any) => ({ ...prev, [field]: value })), [])
-
-  const updateSubtask = useCallback((sid: string, field: string, value: string) =>
-    setSubtasks(prev => prev.map(s => s.id === sid ? { ...s, [field]: value } : s)), [])
-
-  const handleTaskStatusChange = async (newStatus: string) => {
-    updateTask('status', newStatus)
-    if (!isEditing) {
-      await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
-      setSuccess('✅ Status updated!')
-      setTimeout(() => setSuccess(''), 2000)
+  // ── status change (always allowed) ──────────────────────────────────
+  const handleStatusChange = async (newStatus: string) => {
+    if (newStatus === 'Completed' && subtasks.some((s: any) => s.status !== 'Completed')) {
+      setError('All subtasks must be Completed first.')
+      return
     }
-  }
+    setError('')
+    const updated = { ...task, status: newStatus }
+    setTask(updated)
+    await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
 
-  const handleSubtaskStatusChange = async (sid: string, newStatus: string, isNew?: boolean) => {
-    updateSubtask(sid, 'status', newStatus)
-    if (!isEditing && !isNew) {
-      await supabase.from('Subtasks').update({ status: newStatus }).eq('id', sid)
-    }
-  }
-
-  const addSubtask = () => {
-    setIsEditing(true)
-    setSubtasks(prev => [...prev, {
-      id: crypto.randomUUID(),
-      topic: '',
-      description: '',
-      owner: '',
-      start_date: task?.start_date || '',
-      end_date: task?.end_date || '',
-      status: 'Not Started' as Status,
-      isNew: true
-    }])
-  }
-
-  const deleteSubtask = async (s: Subtask) => {
-    if (!canDelete) return
-    if (!s.isNew && !confirm('Delete this subtask?')) return
-    if (!s.isNew) await supabase.from('Subtasks').delete().eq('id', s.id)
-    setSubtasks(prev => prev.filter(sub => sub.id !== s.id))
-  }
-
-  const deleteTask = async () => {
-    if (!canDelete) return
-    if (!confirm(`Delete task "${task.topic}"?`)) return
-    setDeleting(true)
-    await supabase.from('Subtasks').delete().eq('parent_task_id', Number(id))
-    await supabase.from('Tasks').delete().eq('id', id)
-    router.back()
-  }
-
-  const cloneTask = async () => {
-    setCloning(true)
-    try {
-      const isRecurring = task.type && task.type !== 'One-time'
-      let newStart = task.start_date
-      let newEnd   = task.end_date
-      if (isRecurring && task.start_date && task.end_date) {
-        const shifted = nextDate(task.start_date, task.end_date, task.type)
-        newStart = shifted.start
-        newEnd   = shifted.end
-      }
+    // auto-create next recurrence
+    if (newStatus === 'Completed' && task.type !== 'One-time') {
+      const { start, end } = nextRecurrence(task.start_date, task.end_date, task.type)
       const { data: newTask } = await supabase.from('Tasks').insert({
         project_name: task.project_name,
-        topic: isRecurring ? task.topic : `${task.topic} (copy)`,
+        topic: task.topic,
         description: task.description,
-        resource_link: task.resource_link,
-        owner: task.owner,
+        assignees: task.assignees,
         type: task.type,
-        start_date: newStart,
-        end_date: newEnd,
+        start_date: start,
+        end_date: end,
         status: 'Not Started',
-        tags: task.tags,
+        resources: task.resources || [],
+        tags: task.tags || [],
       }).select().single()
 
-      if (newTask && subtasks.length > 0) {
-        for (const s of subtasks) {
-          let subStart = s.start_date
-          let subEnd   = s.end_date
-          if (isRecurring && s.start_date && s.end_date) {
-            const shifted = nextDate(s.start_date, s.end_date, task.type)
-            subStart = shifted.start
-            subEnd   = shifted.end
-          }
+      if (newTask) {
+        for (const sub of subtasks) {
           await supabase.from('Subtasks').insert({
             parent_task_id: newTask.id,
-            topic: s.topic,
-            description: s.description,
-            owner: s.owner || null,
-            start_date: subStart,
-            end_date: subEnd,
+            topic: sub.topic,
+            description: sub.description,
+            assignees: assigneesFromRow(sub),
+            start_date: start,
+            end_date: end,
             status: 'Not Started',
           })
         }
+        setSuccess(`✅ Next ${task.type} instance created (${start}).`)
+        setTimeout(() => setSuccess(''), 4000)
       }
-      setSuccess('✅ Task cloned!')
-      setTimeout(() => router.push(`/tasks/${newTask?.id}`), 800)
-    } catch (e: any) {
-      setError(e.message)
     }
-    setCloning(false)
   }
 
+  // ── save all edits ───────────────────────────────────────────────────
   const handleSave = async () => {
     setError(''); setSaving(true)
-    if (task.status === 'Completed' && subtasks.length > 0) {
-      if (!subtasks.every(s => s.status === 'Completed')) {
-        setError('All subtasks must be completed before marking task as Completed.')
-        setSaving(false); return
-      }
+    if (!editTask.topic?.trim()) { setError('Task title is required.'); setSaving(false); return }
+    if (editTask.status === 'Completed' && editSubtasks.some((s: any) => s.status !== 'Completed')) {
+      setError('All subtasks must be Completed before marking task as Completed.')
+      setSaving(false); return
     }
-    for (const s of subtasks) {
-      if (!s.topic.trim()) { setError('All subtask titles are required.'); setSaving(false); return }
-      if (s.start_date < task.start_date || s.end_date > task.end_date) {
-        setError(`Subtask "${s.topic}" dates must be within parent task dates.`); setSaving(false); return
-      }
+    for (const s of editSubtasks) {
+      if (!s.topic?.trim()) { setError('All subtask titles are required.'); setSaving(false); return }
     }
+
     try {
       await supabase.from('Tasks').update({
-        topic: task.topic, 
-        description: task.description, 
-        resource_link: task.resource_link,
-        owner: task.owner,
-        status: task.status, 
-        start_date: task.start_date, 
-        end_date: task.end_date,
-        type: task.type, 
-        tags: task.tags,
+        topic: editTask.topic.trim(),
+        description: editTask.description?.trim() || '',
+        assignees: editTask.assignees || [],
+        type: editTask.type,
+        start_date: editTask.start_date,
+        end_date: editTask.end_date,
+        status: editTask.status,
+        resources: resources,
       }).eq('id', id)
 
-      await Promise.all(subtasks.map(s => {
+      for (const s of editSubtasks) {
         const payload = {
-          parent_task_id: Number(id),
-          topic: s.topic, 
-          description: s.description,
-          owner: s.owner || null,
-          start_date: s.start_date, 
-          end_date: s.end_date, 
-          status: s.status
+          topic: s.topic.trim(),
+          description: s.description?.trim() || '',
+          assignees: s.assignees || [],
+          start_date: s.start_date,
+          end_date: s.end_date,
+          status: s.status,
         }
-        if (s.isNew) return supabase.from('Subtasks').insert(payload)
-        return supabase.from('Subtasks').update(payload).eq('id', s.id)
-      }))
+        if (s.isNew) {
+          await supabase.from('Subtasks').insert({ ...payload, parent_task_id: Number(id) })
+        } else {
+          await supabase.from('Subtasks').update(payload).eq('id', s.id)
+        }
+      }
 
+      await loadTask()
+      setEditing(false)
       setSuccess('✅ Changes saved!')
-      setIsEditing(false)
-      await loadData()
       setTimeout(() => setSuccess(''), 3000)
     } catch (e: any) { setError(e.message) }
     setSaving(false)
   }
 
-  const cancelEdit = () => {
-    setIsEditing(false)
-    loadData()
+  // ── clone ────────────────────────────────────────────────────────────
+  const handleClone = async () => {
+    setCloning(true)
+    const { data: newTask } = await supabase.from('Tasks').insert({
+      project_name: task.project_name,
+      topic: `${task.topic} (Copy)`,
+      description: task.description,
+      assignees: task.assignees,
+      type: task.type,
+      start_date: task.start_date,
+      end_date: task.end_date,
+      status: 'Not Started',
+      resources: task.resources || [],
+    }).select().single()
+
+    if (newTask) {
+      for (const sub of subtasks) {
+        await supabase.from('Subtasks').insert({
+          parent_task_id: newTask.id,
+          topic: sub.topic,
+          description: sub.description,
+          assignees: assigneesFromRow(sub),
+          start_date: sub.start_date,
+          end_date: sub.end_date,
+          status: 'Not Started',
+        })
+      }
+      router.push(`/tasks/${newTask.id}`)
+    }
+    setCloning(false)
   }
 
-  const addComment = () => {
-    if (!newComment.trim() || !myUser) return
-    const name = myUser.full_name || myUser.email
-    setComments(prev => [...prev, { id: Date.now(), user: name, text: newComment.trim(), time: 'just now' }])
-    setNewComment('')
+  // ── delete ───────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!confirm(`Delete "${task.topic}"? This cannot be undone.`)) return
+    setDeleting(true)
+    await supabase.from('Subtasks').delete().eq('parent_task_id', id)
+    await supabase.from('Tasks').delete().eq('id', id)
+    router.back()
   }
 
-  const currentOwners = (task?.owner || '').split(',').map((o: string) => o.trim()).filter(Boolean)
-  const toggleOwner = (name: string) => {
-    if (!isEditing) return
-    const next = currentOwners.includes(name)
-      ? currentOwners.filter((o: string) => o !== name)
-      : [...currentOwners, name]
-    updateTask('owner', next.join(', '))
+  // ── assignee toggle ──────────────────────────────────────────────────
+  const toggleAssignee = (name: string) => {
+    const cur: string[] = editTask.assignees || []
+    setEditTask((p: any) => ({
+      ...p,
+      assignees: cur.includes(name) ? cur.filter(a => a !== name) : [...cur, name],
+    }))
   }
 
-  const completedSubs = subtasks.filter(s => s.status === 'Completed').length
-  const isRecurring   = task?.type && task.type !== 'One-time'
+  const toggleSubAssignee = (subId: string, name: string) => {
+    setEditSubtasks(prev => prev.map((s: any) => {
+      if (String(s.id) !== String(subId)) return s
+      const cur: string[] = s.assignees || []
+      return { ...s, assignees: cur.includes(name) ? cur.filter(a => a !== name) : [...cur, name] }
+    }))
+  }
 
-  if (loading) return <AppShell title="Task Detail"><div style={{ padding: 40, color: 'var(--txt3)' }}>Loading...</div></AppShell>
-  if (!task)   return <AppShell title="Task Detail"><div className="alert alert-error">Task not found.</div></AppShell>
+  // ── resource helpers ─────────────────────────────────────────────────
+  const addResource = () => setResources(p => [...p, { sl: p.length + 1, title: '', link: '' }])
+  const updateResource = (i: number, field: 'title' | 'link', val: string) =>
+    setResources(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
+  const removeResource = (i: number) =>
+    setResources(p => p.filter((_, idx) => idx !== i).map((r, idx) => ({ ...r, sl: idx + 1 })))
+
+  // ── subtask helpers ──────────────────────────────────────────────────
+  const addSubtask = () => setEditSubtasks(p => [...p, {
+    id: `new-${Date.now()}`, topic: '', description: '',
+    assignees: [], start_date: editTask?.start_date || '',
+    end_date: editTask?.end_date || '', status: 'Not Started', isNew: true,
+  }])
+  const updateSub = (id: string, field: string, val: string) =>
+    setEditSubtasks(p => p.map((s: any) => String(s.id) === id ? { ...s, [field]: val } : s))
+  const removeSub = async (s: any) => {
+    if (!s.isNew) {
+      if (!confirm('Delete this subtask?')) return
+      await supabase.from('Subtasks').delete().eq('id', s.id)
+    }
+    setEditSubtasks(p => p.filter((x: any) => String(x.id) !== String(s.id)))
+  }
+
+  if (loading) return <AppShell title="Task Detail"><div style={S.loading}>Loading...</div></AppShell>
+  if (!task)   return <AppShell title="Task Detail"><div style={{ color: 'var(--red)', padding: 20 }}>Task not found.</div></AppShell>
+
+  const taskAssignees = assigneesFromRow(task)
+  const editAssignees: string[] = editing ? (editTask?.assignees || []) : taskAssignees
+  const isRecurring = task.type && task.type !== 'One-time'
 
   return (
     <AppShell title={task.topic || 'Task Detail'}>
-      {/* HEADER */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-        <button className="btn btn-icon" onClick={() => router.back()}><ArrowLeft size={14}/></button>
-        <div style={{ flex:1, fontSize:15, fontWeight:500, color:'var(--txt)', minWidth:0 }}>
-          {isEditing ? 'Editing Task...' : task.topic}
-        </div>
-        <StatusPill status={task.status}/>
-        {isRecurring && <span className="pill pill-rc" style={{ fontSize:11 }}>↻ {task.type}</span>}
-        
-        {/* VIEW CONTROLS */}
-        {!isEditing && (
+      {/* ── Top bar ── */}
+      <div style={S.topBar}>
+        <button style={S.backBtn} onClick={() => router.back()}>
+          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M19 12H5M12 5l-7 7 7 7"/>
+          </svg>
+        </button>
+        <div style={S.topTitle}>{task.topic}</div>
+        {/* Status — always editable */}
+        <select
+          value={editing ? editTask.status : task.status}
+          onChange={e => editing
+            ? setEditTask((p: any) => ({ ...p, status: e.target.value }))
+            : handleStatusChange(e.target.value)
+          }
+          style={S.statusSelect}
+        >
+          {STATUSES.map((s: any) => <option key={s}>{s}</option>)}
+        </select>
+
+        {isRecurring && <span style={S.recurBadge}>↻ {task.type}</span>}
+
+        <button style={S.cloneBtn} onClick={handleClone} disabled={cloning}>
+          {cloning ? 'Cloning...' : 'Clone'}
+        </button>
+
+        {!editing && (
+          <button style={S.editBtn} onClick={startEdit}>
+            ✏ Edit
+          </button>
+        )}
+        {editing && (
           <>
-            <button className="btn btn-primary btn-sm" onClick={() => setIsEditing(true)}>
-              <Edit2 size={13}/> Edit
+            <button style={S.saveBtn} onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : '💾 Save'}
             </button>
-            <button className="btn btn-sm" onClick={cloneTask} disabled={cloning}>
-              <Copy size={13}/> {cloning ? 'Cloning...' : isRecurring ? `Clone → Next ${task.type}` : 'Clone Task'}
-            </button>
-            {canDelete && (
-              <button className="btn btn-danger btn-sm" onClick={deleteTask} disabled={deleting}>
-                <Trash2 size={13}/> {deleting ? 'Deleting...' : 'Delete'}
-              </button>
-            )}
+            <button style={S.cancelBtn} onClick={cancelEdit}>Cancel</button>
           </>
         )}
-
-        {/* EDIT CONTROLS */}
-        {isEditing && (
-          <>
-            <button className="btn btn-sm" onClick={cancelEdit} disabled={saving}>
-              <X size={13}/> Cancel
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          </>
+        {canManage && !editing && (
+          <button style={S.deleteBtn} onClick={handleDelete} disabled={deleting}>
+            {deleting ? '…' : '🗑 Delete'}
+          </button>
         )}
       </div>
 
       {isRecurring && (
-        <div className="alert alert-info" style={{ marginBottom:12 }}>
-          🔄 <strong>{task.type} recurring task</strong> — Clone to create the next instance with dates shifted forward.
+        <div style={S.recurBanner}>
+          🔄 <strong>{task.type} recurring task</strong> — When marked Completed the next instance is auto-created.
         </div>
       )}
 
-      {error   && <div className="alert alert-error"   style={{ marginBottom:12 }}>{error}</div>}
-      {success && <div className="alert alert-success" style={{ marginBottom:12 }}>{success}</div>}
+      {error   && <div style={S.alertErr}>{error}</div>}
+      {success && <div style={S.alertOk}>{success}</div>}
 
-      {/* MAIN CONTENT - TWO COLUMN LAYOUT */}
-      <div className="two-col">
-        {/* LEFT COLUMN: FORM */}
+      {/* ── Two column ── */}
+      <div style={S.twoCol}>
+        {/* Left: main fields */}
         <div>
-          <div className="card">
-            <div className="form-section">Task Details</div>
-            
-            <div className="form-group">
-              <label className="form-label">Title</label>
-              <input className="form-input" disabled={!isEditing} value={task.topic || ''} onChange={e => updateTask('topic', e.target.value)}/>
+          <div style={S.card}>
+            <div style={S.cardTitle}>Task Details</div>
+
+            <div style={S.fieldGroup}>
+              <label style={S.label}>Task Title</label>
+              {editing
+                ? <input style={S.input} value={editTask.topic || ''} onChange={e => setEditTask((p: any) => ({ ...p, topic: e.target.value }))} />
+                : <div style={S.viewVal}>{task.topic}</div>
+              }
             </div>
-            
-            <div className="form-grid-2">
-              <div className="form-group">
-                <label className="form-label">Status</label>
-                {/* Status ALWAYS enabled */}
-                <select className="form-select" value={task.status} onChange={e => handleTaskStatusChange(e.target.value)}>
-                  {STATUSES.map(s => <option key={s}>{s}</option>)}
-                </select>
+
+            <div style={S.fieldGroup}>
+              <label style={S.label}>Description</label>
+              {editing
+                ? <textarea style={S.textarea} value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
+                : <div style={{ ...S.viewVal, color: task.description ? 'var(--txt2)' : 'var(--txt3)' }}>{task.description || 'No description.'}</div>
+              }
+            </div>
+
+            <div style={S.grid2}>
+              <div style={S.fieldGroup}>
+                <label style={S.label}>Start Date</label>
+                {editing
+                  ? <input type="date" style={S.input} value={editTask.start_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, start_date: e.target.value }))} />
+                  : <div style={S.viewVal}>{task.start_date || '—'}</div>
+                }
               </div>
-              <div className="form-group">
-                <label className="form-label">Type</label>
-                <select className="form-select" disabled={!isEditing} value={task.type} onChange={e => updateTask('type', e.target.value)}>
-                  {TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
+              <div style={S.fieldGroup}>
+                <label style={S.label}>End Date</label>
+                {editing
+                  ? <input type="date" style={S.input} value={editTask.end_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, end_date: e.target.value }))} />
+                  : <div style={S.viewVal}>{task.end_date || '—'}</div>
+                }
               </div>
-              <div className="form-group">
-                <label className="form-label">Start Date</label>
-                <input className="form-input" type="date" disabled={!isEditing} value={task.start_date||''} onChange={e => updateTask('start_date', e.target.value)}/>
+              <div style={S.fieldGroup}>
+                <label style={S.label}>Task Type</label>
+                {editing
+                  ? <select style={S.input} value={editTask.type || 'One-time'} onChange={e => setEditTask((p: any) => ({ ...p, type: e.target.value }))}>{TYPES.map((t: any) => <option key={t}>{t}</option>)}</select>
+                  : <div style={S.viewVal}>{task.type}</div>
+                }
               </div>
-              <div className="form-group">
-                <label className="form-label">End Date</label>
-                <input className="form-input" type="date" disabled={!isEditing} value={task.end_date||''} onChange={e => updateTask('end_date', e.target.value)}/>
+              <div style={S.fieldGroup}>
+                <label style={S.label}>Project</label>
+                <div style={S.viewVal}>{task.project_name || '—'}</div>
               </div>
             </div>
 
-            <div className="form-group" style={{ marginTop: 12 }}>
-              <label className="form-label">Resource Link</label>
-              <input className="form-input" type="url" disabled={!isEditing} placeholder="https://..." value={task.resource_link || ''} onChange={e => updateTask('resource_link', e.target.value)}/>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Assigned To
-                {currentOwners.length > 0 && (
-                  <span style={{ fontSize:10, color:'var(--txt3)', marginLeft:6, fontWeight:400, textTransform:'none', letterSpacing:0 }}>
-                    {currentOwners.length} assigned
-                  </span>
-                )}
-              </label>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:4 }}>
-                {projectMembers.map(u => {
-                  const name = u.full_name || u.email
-                  const isSelected = currentOwners.includes(name)
-                  if (!isEditing && !isSelected) return null; // Hide unassigned users in View mode
-                  return (
-                    <button key={u.id} type="button" disabled={!isEditing}
-                      className={isSelected ? 'toggle-btn sel-owner' : 'toggle-btn'}
-                      style={{ cursor: isEditing ? 'pointer' : 'default', opacity: (!isEditing && !isSelected) ? 0.5 : 1 }}
-                      onClick={() => toggleOwner(name)}>
-                      {isSelected ? '✓ ' : ''}{name}
-                    </button>
-                  )
-                })}
-              </div>
-              {currentOwners.length > 0 && !isEditing && (
-                <div style={{ marginTop:6, fontSize:12, color:'var(--txt3)' }}>
-                  Assigned: {currentOwners.join(', ')}
+            {/* Assigned To */}
+            <div style={S.fieldGroup}>
+              <label style={S.label}>Assigned To</label>
+              {editing ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {projectTeam.map((u: any) => {
+                    const sel = editAssignees.includes(u.full_name)
+                    return (
+                      <button key={u.id} type="button"
+                        onClick={() => toggleAssignee(u.full_name)}
+                        style={{ ...S.chip, ...(sel ? S.chipSel : {}) }}>
+                        {sel ? '✓ ' : ''}{u.full_name}
+                      </button>
+                    )
+                  })}
                 </div>
+              ) : (
+                <div style={S.viewVal}>{taskAssignees.join(', ') || '—'}</div>
               )}
             </div>
+          </div>
 
-            <div className="form-group">
-              <label className="form-label">Description</label>
-              <textarea className="form-textarea" disabled={!isEditing} rows={4} value={task.description||''} onChange={e => updateTask('description', e.target.value)}/>
+          {/* Resources */}
+          <div style={S.card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={S.cardTitle}>Resources</div>
+              {editing && <button style={S.addBtn} onClick={addResource}>+ Add</button>}
             </div>
+            {resources.length === 0 ? (
+              <div style={S.emptyMsg}>No resources attached.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {['SL', 'Title', 'Link', ...(editing ? [''] : [])].map(h => (
+                      <th key={h} style={S.th}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {resources.map((r, i) => (
+                    <tr key={i}>
+                      <td style={S.td}>{r.sl}</td>
+                      <td style={S.td}>
+                        {editing
+                          ? <input style={S.inlineInput} value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} />
+                          : r.title
+                        }
+                      </td>
+                      <td style={S.td}>
+                        {editing
+                          ? <input style={S.inlineInput} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://…" />
+                          : r.link
+                            ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', fontSize: 12 }}>{r.link}</a>
+                            : '—'
+                        }
+                      </td>
+                      {editing && (
+                        <td style={S.td}>
+                          <button onClick={() => removeResource(i)} style={S.removeBtn}>✕</button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
-        {/* RIGHT COLUMN: META INFO & COMMENTS */}
+        {/* Right: info panel */}
         <div>
-          <div className="card">
-            <div style={{ fontSize:13, fontWeight:500, marginBottom:10, color:'var(--txt)' }}>Task Info</div>
-            <div className="meta-grid">
-              <div><div className="meta-label">Project</div><div className="meta-value">{task.project_name||'—'}</div></div>
-              <div><div className="meta-label">Owner</div><div className="meta-value">{task.owner||'—'}</div></div>
-              <div><div className="meta-label">Start</div><div className="meta-value">{task.start_date||'—'}</div></div>
-              <div><div className="meta-label">End</div><div className="meta-value">{task.end_date||'—'}</div></div>
-              <div><div className="meta-label">Type</div><div className="meta-value">{task.type||'—'}</div></div>
-              <div><div className="meta-label">Status</div><div className="meta-value"><StatusPill status={task.status}/></div></div>
+          <div style={S.card}>
+            <div style={S.cardTitle}>Task Info</div>
+            <div style={S.infoGrid}>
+              {[
+                ['Project',    task.project_name || '—'],
+                ['Type',       task.type],
+                ['Start',      task.start_date || '—'],
+                ['End',        task.end_date || '—'],
+                ['Assignees',  taskAssignees.join(', ') || '—'],
+                ['Status',     null],
+              ].map(([lbl, val]) => (
+                <div key={lbl as string}>
+                  <div style={S.infoLabel}>{lbl}</div>
+                  <div style={S.infoVal}>
+                    {lbl === 'Status' ? <Pill status={task.status} /> : val}
+                  </div>
+                </div>
+              ))}
             </div>
             {isRecurring && task.start_date && task.end_date && (
-              <>
-                <div style={{ borderTop:'0.5px solid var(--brd)', margin:'10px 0' }}/>
-                <div style={{ fontSize:12, color:'var(--txt3)' }}>
-                  Next instance: <strong style={{ color:'var(--txt)' }}>{nextDate(task.start_date, task.end_date, task.type).start}</strong>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="card">
-            <div style={{ fontSize:13, fontWeight:500, marginBottom:10, color:'var(--txt)' }}>Comments</div>
-            {comments.length === 0 && <div style={{ fontSize:13, color:'var(--txt3)', marginBottom:12 }}>No comments yet.</div>}
-            {comments.map(c => (
-              <div key={c.id} className="notif-item">
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:12, fontWeight:500, color:'var(--txt)' }}>{c.user}</div>
-                  <div style={{ fontSize:13, color:'var(--txt2)', marginTop:2 }}>{c.text}</div>
-                </div>
-                <div style={{ fontSize:11, color:'var(--txt3)' }}>{c.time}</div>
+              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--txt3)', borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
+                Next: <strong style={{ color: 'var(--txt2)' }}>{nextRecurrence(task.start_date, task.end_date, task.type).start}</strong>
               </div>
-            ))}
-            <div className="comment-box">
-              <input className="comment-input" placeholder="Add a comment..." value={newComment}
-                onChange={e => setNewComment(e.target.value)} onKeyDown={e => e.key==='Enter' && addComment()}/>
-              <button className="btn btn-primary" onClick={addComment}>Send</button>
-            </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* SUBTASKS */}
-      <div className="card" style={{ marginTop:32 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <div style={{ fontSize:15, fontWeight:600, color:'var(--txt)' }}>
+      {/* ── Subtasks ── */}
+      <div style={{ ...S.card, marginTop: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={S.cardTitle}>
             Subtasks
             {subtasks.length > 0 && (
-              <span style={{ marginLeft:8, fontSize:13, color:'var(--txt3)' }}>
-                {completedSubs} of {subtasks.length} completed
+              <span style={{ fontSize: 12, color: 'var(--txt3)', marginLeft: 8, fontWeight: 400 }}>
+                {subtasks.filter((s: any) => s.status === 'Completed').length} / {subtasks.length} completed
               </span>
             )}
           </div>
-          {isEditing && (
-            <button type="button" className="btn btn-primary btn-sm" onClick={addSubtask}>
-              <Plus size={13}/> Add Subtask
-            </button>
-          )}
+          {editing && <button style={S.addBtn} onClick={addSubtask}>+ Add Subtask</button>}
         </div>
 
-        {subtasks.length === 0 ? (
-          <div style={{ padding:'40px 20px', textAlign:'center', color:'var(--txt3)', background:'var(--bg2)', borderRadius:'var(--r)' }}>
-            No subtasks yet.<br/>{isEditing && "Click '+ Add Subtask' to create one."}
-          </div>
+        {(editing ? editSubtasks : subtasks).length === 0 ? (
+          <div style={S.emptyMsg}>No subtasks yet.</div>
         ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-            {subtasks.map((s, i) => (
-              <div key={s.id} style={{ background:'var(--bg2)', borderRadius:'var(--r)', padding:'12px 16px', border:'0.5px solid var(--brd)' }}>
-                <div style={{ display:'flex', alignItems:'flex-start', gap:12, flexWrap:'wrap', marginBottom: 8 }}>
-                  <span style={{ fontSize:13, fontWeight:600, color:'var(--txt3)', width:28, marginTop: 8 }}>#{i+1}</span>
-                  
-                  <div style={{ flex:1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 200 }}>
-                    {/* Top Row: Title, Owner, Status, Dates */}
-                    <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                      <input className="form-input" style={{ flex:1, minWidth:150, fontSize:14 }} disabled={!isEditing} placeholder="Subtask title"
-                        value={s.topic} onChange={e => updateSubtask(s.id, 'topic', e.target.value)}/>
-                      
-                      <select className="form-select" style={{ width:160 }} disabled={!isEditing} value={s.owner||''}
-                        onChange={e => updateSubtask(s.id, 'owner', e.target.value)}>
-                        <option value="">Unassigned</option>
-                        {projectMembers.map(u => <option key={u.id} value={u.full_name||u.email}>{u.full_name||u.email}</option>)}
-                      </select>
-                      
-                      {/* Subtask Status ALWAYS enabled */}
-                      <select className="form-select" style={{ width:130 }} value={s.status}
-                        onChange={e => handleSubtaskStatusChange(s.id, e.target.value, s.isNew)}>
-                        {STATUSES.map(st => <option key={st}>{st}</option>)}
-                      </select>
-                      
-                      <input className="form-input" type="date" disabled={!isEditing} style={{ width:130 }} value={s.start_date}
-                        onChange={e => updateSubtask(s.id, 'start_date', e.target.value)}/>
-                      <input className="form-input" type="date" disabled={!isEditing} style={{ width:130 }} value={s.end_date}
-                        onChange={e => updateSubtask(s.id, 'end_date', e.target.value)}/>
-                      
-                      <StatusPill status={s.status}/>
-                      
-                      {isEditing && canDelete && (
-                        <button onClick={() => deleteSubtask(s)} style={{ background:'none', border:'none', color:'#cc3333', padding:4, cursor:'pointer' }}>
-                          <Trash2 size={15}/>
-                        </button>
-                      )}
-                    </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {(editing ? editSubtasks : subtasks).map((s, i) => {
+              const subAssignees = assigneesFromRow(s)
+              const taskAssigneeList: string[] = editing
+                ? (editTask?.assignees || [])
+                : taskAssignees
 
-                    {/* Bottom Row: Description */}
-                    <textarea className="form-textarea" disabled={!isEditing} rows={1} placeholder="Subtask description..." 
-                      style={{ fontSize: 13, padding: '6px 10px' }}
-                      value={s.description || ''} onChange={e => updateSubtask(s.id, 'description', e.target.value)}/>
+              return (
+                <div key={s.id} style={S.subCard}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={S.subNum}>#{i + 1}</span>
+                    {!editing && <Pill status={s.status} />}
+                    {editing && (
+                      <button onClick={() => removeSub(s)} style={{ ...S.removeBtn, marginLeft: 'auto' }}>✕ Remove</button>
+                    )}
+                  </div>
+
+                  <div style={S.grid2}>
+                    <div style={S.fieldGroup}>
+                      <label style={S.label}>Title</label>
+                      {editing
+                        ? <input style={S.input} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} />
+                        : <div style={S.viewVal}>{s.topic}</div>
+                      }
+                    </div>
+                    <div style={S.fieldGroup}>
+                      <label style={S.label}>Status</label>
+                      {editing
+                        ? <select style={S.input} value={s.status} onChange={e => updateSub(String(s.id), 'status', e.target.value)}>{STATUSES.map(st => <option key={st}>{st}</option>)}</select>
+                        : <div style={S.viewVal}>{s.status}</div>
+                      }
+                    </div>
+                    <div style={S.fieldGroup}>
+                      <label style={S.label}>Start Date</label>
+                      {editing
+                        ? <input type="date" style={S.input} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
+                        : <div style={S.viewVal}>{s.start_date || '—'}</div>
+                      }
+                    </div>
+                    <div style={S.fieldGroup}>
+                      <label style={S.label}>End Date</label>
+                      {editing
+                        ? <input type="date" style={S.input} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
+                        : <div style={S.viewVal}>{s.end_date || '—'}</div>
+                      }
+                    </div>
+                  </div>
+
+                  <div style={S.fieldGroup}>
+                    <label style={S.label}>Description</label>
+                    {editing
+                      ? <textarea style={S.textarea} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Optional…" />
+                      : <div style={{ ...S.viewVal, color: s.description ? 'var(--txt2)' : 'var(--txt3)' }}>{s.description || '—'}</div>
+                    }
+                  </div>
+
+                  <div style={S.fieldGroup}>
+                    <label style={S.label}>Assigned To (from task assignees)</label>
+                    {editing ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+                        {taskAssigneeList.length === 0
+                          ? <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Assign people to the task first.</span>
+                          : taskAssigneeList.map(name => {
+                              const sel = (s.assignees || []).includes(name)
+                              return (
+                                <button key={name} type="button"
+                                  onClick={() => toggleSubAssignee(String(s.id), name)}
+                                  style={{ ...S.chip, ...(sel ? S.chipSel : {}), fontSize: 11, padding: '2px 8px' }}>
+                                  {sel ? '✓ ' : ''}{name}
+                                </button>
+                              )
+                            })
+                        }
+                      </div>
+                    ) : (
+                      <div style={S.viewVal}>{subAssignees.join(', ') || '—'}</div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
     </AppShell>
   )
+}
+
+// ── styles ─────────────────────────────────────────────────────────────
+const S: Record<string, React.CSSProperties> = {
+  loading:   { padding: 40, color: 'var(--txt3)', textAlign: 'center' },
+  topBar:    { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
+  backBtn:   { background: 'none', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 8px', color: 'var(--txt3)', cursor: 'pointer', display: 'flex' },
+  topTitle:  { flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--txt)', letterSpacing: '-0.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  statusSelect: { padding: '4px 8px', borderRadius: 6, background: 'var(--input-bg)', border: '1px solid var(--input-brd)', color: 'var(--txt)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' },
+  recurBadge: { background: '#3d2400', color: '#f59e0b', fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 500 },
+  editBtn:   { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  saveBtn:   { background: 'var(--accent)', color: 'var(--accent2)', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  cancelBtn: { background: 'var(--brd)', color: 'var(--txt3)', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  cloneBtn:  { background: 'var(--brd)', color: 'var(--txt3)', border: '1px solid var(--input-brd)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  deleteBtn: { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer' },
+  recurBanner: { background: 'var(--amber2)', border: '1px solid rgba(180,83,9,0.2)', borderRadius: 8, padding: '9px 14px', fontSize: 12, color: 'var(--amber)', marginBottom: 14 },
+  alertErr:  { background: 'var(--red2)', color: 'var(--red)', border: '1px solid rgba(197,34,31,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
+  alertOk:   { background: 'var(--accent2)', color: 'var(--accent)', border: '1px solid rgba(46,125,50,0.2)', borderRadius: 6, padding: '9px 14px', fontSize: 12, marginBottom: 12 },
+  twoCol:    { display: 'grid', gridTemplateColumns: '1fr 340px', gap: 14, marginBottom: 8 },
+  card:      { background: 'var(--card-bg)', border: '1px solid var(--card-brd)', borderRadius: 10, padding: 16, marginBottom: 12 },
+  cardTitle: { fontSize: 12, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 },
+  fieldGroup:{ marginBottom: 12 },
+  label:     { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', display: 'block', marginBottom: 5 },
+  viewVal:   { fontSize: 13, color: 'var(--txt2)', lineHeight: 1.5 },
+  input:     { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
+  textarea:  { width: '100%', padding: '7px 10px', background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 6, color: 'var(--txt)', fontSize: 13, fontFamily: 'inherit', outline: 'none', minHeight: 72, resize: 'vertical' },
+  grid2:     { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
+  chip:      { padding: '3px 10px', fontSize: 12, borderRadius: 20, border: '1px solid var(--input-brd)', cursor: 'pointer', background: 'transparent', color: 'var(--txt3)', fontFamily: 'inherit', transition: 'all 0.12s' },
+  chipSel:   { background: 'var(--accent)', color: 'var(--accent2)', borderColor: 'var(--accent)' },
+  addBtn:    { background: 'var(--blue)', color: 'var(--blue2)', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer' },
+  infoGrid:  { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
+  infoLabel: { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 3 },
+  infoVal:   { fontSize: 12, color: 'var(--txt2)' },
+  th:        { textAlign: 'left', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--txt3)', padding: '4px 8px', borderBottom: '1px solid var(--brd)' },
+  td:        { fontSize: 12, color: 'var(--txt3)', padding: '7px 8px', borderBottom: '1px solid var(--row-brd)', verticalAlign: 'middle' },
+  inlineInput: { background: 'var(--input-bg)', border: '1px solid var(--input-brd)', borderRadius: 4, padding: '3px 7px', color: 'var(--txt)', fontSize: 12, fontFamily: 'inherit', width: '100%', outline: 'none' },
+  removeBtn: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, padding: '2px 4px' },
+  subCard:   { background: 'var(--input-bg)', border: '1px solid var(--card-brd)', borderRadius: 8, padding: '12px 14px' },
+  subNum:    { fontSize: 11, fontWeight: 600, color: 'var(--txt3)', textTransform: 'uppercase' },
+  emptyMsg:  { fontSize: 12, color: 'var(--txt3)', textAlign: 'center', padding: '16px 0' },
 }
