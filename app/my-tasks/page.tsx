@@ -1,227 +1,242 @@
 'use client'
 export const dynamic = 'force-dynamic'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { StatusPill, StatusDot, TypePill } from '@/components/ui/StatusPill'
+import { StatusDot } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
-import { LayoutList, Columns, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { ChevronRight, X, Calendar, Clock, ChevronsUpDown, Users, Edit3, Save, Filter, LayoutList, Columns } from 'lucide-react'
 
-const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
-const DOT_CLR: Record<string,string> = {
-  'Not Started':'#aaa','In Progress':'#378ADD','On-Hold':'#EF9F27','Completed':'#639922'
+const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
+const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
+const AVATAR_CL = ['#0C447C', '#27500A', '#3C3489', '#633806', '#712B13', '#085041']
+
+function ini(name: string) {
+  const p = (name || '?').trim().split(' ')
+  return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
+}
+
+// ─── INTERACTIVE STATUS PILL ──────────────────────────────────────────────
+const StatusPicker = ({ current, onUpdate }: { current: string, onUpdate: (val: string) => void }) => {
+  const getColor = (s: string) => {
+    if (s === 'Completed') return { bg: 'rgba(99, 153, 34, 0.1)', fg: '#639922' }
+    if (s === 'In Progress') return { bg: 'rgba(55, 138, 221, 0.1)', fg: '#378ADD' }
+    if (s === 'On-Hold') return { bg: 'rgba(239, 159, 39, 0.1)', fg: '#EF9F27' }
+    return { bg: 'rgba(170, 170, 170, 0.1)', fg: '#aaa' }
+  }
+  const colors = getColor(current)
+
+  return (
+    <select 
+      value={current} 
+      onChange={(e) => onUpdate(e.target.value)}
+      style={{
+        background: colors.bg,
+        color: colors.fg,
+        border: 'none',
+        fontSize: '10px',
+        fontWeight: 700,
+        padding: '2px 6px',
+        borderRadius: '10px',
+        textTransform: 'uppercase',
+        outline: 'none',
+        cursor: 'pointer',
+        appearance: 'none',
+        width: '90px',
+        textAlign: 'center'
+      }}
+    >
+      {STATUSES.map(s => <option key={s} value={s} style={{ background: 'var(--bg)', color: 'var(--txt)' }}>{s}</option>)}
+    </select>
+  )
 }
 
 export default function MyTasks() {
   const router = useRouter()
-  const [tasks,       setTasks]       = useState<any[]>([])
-  const [subtasks,    setSubtasks]    = useState<any[]>([])
-  const [me,          setMe]          = useState<any>(null)
-  const [sf,          setSf]          = useState('All')
-  const [pf,          setPf]          = useState('All')
-  const [view,        setView]        = useState<'list'|'kanban'>('list')
-  const [dragging,    setDragging]    = useState<string|null>(null)
-  const [expanded,    setExpanded]    = useState<Record<string,boolean>>({})
+  const [tasks, setTasks] = useState<any[]>([])
+  const [subtasks, setSubtasks] = useState<any[]>([])
+  const [me, setMe] = useState<any>(null)
+  const [pf, setPf] = useState('All') // Only Project Filter remains
+  const [view, setView] = useState<'list' | 'kanban'>('list')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [allExpanded, setAllExpanded] = useState(true)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const load = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
-      const { data: u } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
-      setMe({ ...u, email: session.user.email })
-      const [t, s] = await Promise.all([
-        supabase.from('Tasks').select('*').order('end_date'),
-        supabase.from('Subtasks').select('*'),
-      ])
-      setTasks(t.data || [])
-      setSubtasks(s.data || [])
+  const loadData = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const { data: u } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
+    setMe({ ...u, email: session.user.email })
+
+    const [t, s] = await Promise.all([
+      supabase.from('Tasks').select('*').order('end_date'),
+      supabase.from('Subtasks').select('*'),
+    ])
+    setTasks(t.data || []); setSubtasks(s.data || []); setLoading(false)
+  }
+
+  useEffect(() => { loadData() }, [])
+
+  const handleStatusChange = async (id: string, newStatus: string, isSubtask: boolean) => {
+    const table = isSubtask ? 'Subtasks' : 'Tasks'
+    const { error } = await supabase.from(table).update({ status: newStatus }).eq('id', id)
+    if (!error) {
+      if (isSubtask) {
+        setSubtasks(prev => prev.map(s => s.id === id ? { ...s, status: newStatus } : s))
+      } else {
+        setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t))
+      }
     }
-    load()
-  }, [])
-
-  const isMyTask = (t: any) => {
-    const o = (t.owner||'').toLowerCase()
-    const e = (me?.email||'').toLowerCase()
-    const n = (me?.full_name||'').toLowerCase()
-    return o.includes(e) || (n.length > 2 && o.includes(n))
   }
-  const isMySubtask = (s: any) => {
-    const o = (s.owner||'').toLowerCase()
-    const e = (me?.email||'').toLowerCase()
-    const n = (me?.full_name||'').toLowerCase()
+
+  const isMe = (owner: string) => {
+    const o = (owner || '').toLowerCase(), e = (me?.email || '').toLowerCase(), n = (me?.full_name || '').toLowerCase()
     return o.includes(e) || (n.length > 2 && o.includes(n))
   }
 
-  const myTaskIds = new Set(tasks.filter(isMyTask).map(t => t.id))
-  const taskIdsWithMySubtasks = new Set(subtasks.filter(isMySubtask).map(s => s.parent_task_id))
-  const allMyTaskIds = new Set([...myTaskIds, ...taskIdsWithMySubtasks])
-  const mine = tasks.filter(t => allMyTaskIds.has(t.id))
+  const myTasks = useMemo(() => {
+    return tasks.filter(t => {
+      const taskMine = isMe(t.owner) || (t.assignees || []).some((a: string) => isMe(a))
+      const subMine = subtasks.some(s => s.parent_task_id === t.id && (isMe(s.owner) || (s.assignees || []).some((a: string) => isMe(a))))
+      const matchesProject = pf === 'All' || t.project_name === pf
+      return (taskMine || subMine) && matchesProject
+    })
+  }, [tasks, subtasks, me, pf])
 
-  let filtered = mine
-  if (sf !== 'All') filtered = filtered.filter(t => t.status === sf)
-  if (pf !== 'All') filtered = filtered.filter(t => t.project_name === pf)
-  const projects = [...new Set(mine.map(t => t.project_name).filter(Boolean))].sort() as string[]
+  const projectsList = useMemo(() => [...new Set(tasks.filter(t => isMe(t.owner)).map(t => t.project_name).filter(Boolean))].sort(), [tasks, me])
 
-  // Group by project, sorted A-Z
-  const grouped: Record<string, any[]> = {}
-  filtered.forEach(t => {
-    const p = t.project_name || 'No Project'
-    grouped[p] = (grouped[p] || []).concat(t)
-  })
-  const groupEntries = Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]))
+  const groupedTasks = useMemo(() => {
+    const grouped: Record<string, any[]> = {}
+    myTasks.forEach(t => {
+      const p = t.project_name || 'Unassigned Project'
+      grouped[p] = (grouped[p] || []).concat(t)
+    })
+    return Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [myTasks])
 
-  const today = new Date(); today.setHours(0,0,0,0)
-
-  const toggleExpand = (id: string) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
   const toggleAll = () => {
     const next = !allExpanded
     setAllExpanded(next)
-    const s: Record<string,boolean> = {}
-    filtered.forEach(t => { s[t.id] = next })
-    setExpanded(s)
+    const newState: Record<string, boolean> = {}
+    myTasks.forEach(t => { newState[t.id] = next })
+    setExpanded(newState)
   }
 
-  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
-    e.dataTransfer.setData('taskId', id); setDragging(id)
-  }, [])
-  const handleDragEnd  = useCallback(() => setDragging(null), [])
-  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault() }, [])
-
-  const handleDrop = useCallback(async (e: React.DragEvent, newStatus: string) => {
-    e.preventDefault()
-    const id = e.dataTransfer.getData('taskId')
-    const task = tasks.find(t => t.id === id)
-    if (!task || task.status === newStatus) { setDragging(null); return }
-    if (newStatus === 'Completed') {
-      const subs = subtasks.filter(s => s.parent_task_id === id)
-      if (subs.some(s => s.status !== 'Completed')) {
-        alert('All subtasks must be completed first.'); setDragging(null); return
-      }
-    }
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t))
-    await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
-    setDragging(null)
-  }, [tasks, subtasks])
-
-  const KanbanCard = ({ task }: { task: any }) => {
-    const subs     = subtasks.filter(s => s.parent_task_id === task.id)
-    const doneSubs = subs.filter(s => s.status === 'Completed').length
-    const isOver   = task.end_date && new Date(task.end_date) < today && task.status !== 'Completed'
-    return (
-      <div
-        className={`kanban-card${isOver?' kanban-card-overdue':''}${dragging===task.id?' dragging':''}`}
-        draggable onDragStart={e => handleDragStart(e, task.id)} onDragEnd={handleDragEnd}
-        onClick={() => router.push(`/tasks/${task.id}`)}>
-        <div className="kc-title">{task.topic}</div>
-        <div className="kc-chips">
-          {task.project_name && <span className="kc-chip kc-chip-project">{task.project_name}</span>}
-          {task.type && task.type !== 'One-time' && <span className="kc-chip kc-chip-type">↻ {task.type}</span>}
-          {subs.length > 0 && <span className="kc-chip kc-chip-sub">{doneSubs}/{subs.length} done</span>}
-        </div>
-        {task.owner && <div className="kc-owner">{task.owner}</div>}
-      </div>
-    )
-  }
-
-  const TaskRow = ({ task }: { task: any }) => {
-    const isOver   = task.end_date && new Date(task.end_date) < today && task.status !== 'Completed'
-    const subs     = subtasks.filter(s => s.parent_task_id === task.id)
-    const isOpen   = expanded[task.id] ?? true
-    const doneSubs = subs.filter(s => s.status === 'Completed').length
-    return (
-      <div style={{ marginBottom:6 }}>
-        <div className={`task-row ${isOver?'overdue':''} ${dragging===task.id?'dragging':''}`}
-          style={{ cursor:'grab', marginBottom: subs.length&&isOpen ? 2 : 0 }}
-          draggable onDragStart={e => handleDragStart(e, task.id)} onDragEnd={handleDragEnd}>
-          {subs.length > 0
-            ? <ChevronRight size={13} color="var(--txt3)"
-                style={{ transform:isOpen?'rotate(90deg)':'', transition:'transform 0.2s', cursor:'pointer', flexShrink:0 }}
-                onClick={e => { e.stopPropagation(); toggleExpand(task.id) }}/>
-            : <div style={{ width:13, flexShrink:0 }}/>
-          }
-          <StatusDot status={task.status}/>
-          <div style={{ flex:1 }} onClick={() => router.push(`/tasks/${task.id}`)}>
-            <div className="task-name">{task.topic}</div>
-            <div className="task-meta">
-              {task.end_date && <span>{isOver?'⚠ ':''}{task.end_date}</span>}
-              {task.project_name && <span>{task.project_name}</span>}
-              {task.owner && <span>{task.owner}</span>}
-            </div>
-          </div>
-          {subs.length > 0 && <span style={{ fontSize:10, color:'var(--txt3)', whiteSpace:'nowrap' }}>{doneSubs}/{subs.length}</span>}
-          <StatusPill status={task.status}/>
-          <TypePill type={task.type}/>
-        </div>
-        {subs.length > 0 && isOpen && (
-          <div style={{ paddingLeft:28, marginBottom:4 }}>
-            {subs.map(s => (
-              <div key={s.id} className="sub-row"
-                style={{ border:'0.5px solid var(--brd)', borderRadius:'var(--r)', marginBottom:3, background:'var(--bg)', cursor:'pointer' }}
-                onClick={() => router.push(`/tasks/${task.id}`)}>
-                <span style={{ color:'var(--txt3)', fontSize:12 }}>↳</span>
-                <span style={{ flex:1, fontSize:13, color:'var(--txt)' }}>{s.topic}</span>
-                {s.owner && <span style={{ fontSize:11, color:'var(--txt3)' }}>{s.owner}</span>}
-                <span style={{ fontSize:11, color:'var(--txt3)' }}>{s.end_date}</span>
-                <StatusPill status={s.status}/>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
+  if (loading) return <AppShell title="My Tasks">Loading...</AppShell>
 
   return (
-    <AppShell title="My Tasks">
-      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
-        <select className="form-select" style={{ width:150 }} value={sf} onChange={e => setSf(e.target.value)}>
-          <option value="All">All Status</option>
-          {STATUSES.map(s => <option key={s}>{s}</option>)}
-        </select>
-        <select className="form-select" style={{ width:180 }} value={pf} onChange={e => setPf(e.target.value)}>
-          <option value="All">All Projects</option>
-          {projects.map(p => <option key={p}>{p}</option>)}
-        </select>
-        {view === 'list' && (
-          <button className="btn btn-sm" onClick={toggleAll} style={{ display:'flex', alignItems:'center', gap:4 }}>
-            {allExpanded ? <ChevronsDownUp size={13}/> : <ChevronsUpDown size={13}/>}
-            {allExpanded ? 'Collapse All' : 'Expand All'}
-          </button>
-        )}
-        <div style={{ marginLeft:'auto', display:'flex', gap:4 }}>
-          <button className={view==='list'?'btn btn-primary btn-sm':'btn btn-sm'} onClick={() => setView('list')} title="List view"><LayoutList size={15}/></button>
-          <button className={view==='kanban'?'btn btn-primary btn-sm':'btn btn-sm'} onClick={() => setView('kanban')} title="Kanban view"><Columns size={15}/></button>
+    <AppShell title="My Active Tasks">
+      {/* ─── Toolbar (Status Filter Removed) ─── */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)', border: '1px solid var(--brd)', borderRadius: 8, padding: '4px 10px' }}>
+          <Filter size={14} color="var(--txt3)" />
+          <select style={{ background: 'transparent', border: 'none', color: 'var(--txt)', fontSize: 13, outline: 'none' }} value={pf} onChange={e => setPf(e.target.value)}>
+            <option value="All">All Projects</option>
+            {projectsList.map(p => <option key={p}>{p}</option>)}
+          </select>
         </div>
-        <div style={{ fontSize:12, color:'var(--txt3)' }}>{filtered.length} task{filtered.length!==1?'s':''}</div>
+
+        <button className="tv-btn" onClick={toggleAll} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px' }}>
+          <ChevronsUpDown size={14} />
+          <span style={{ fontSize: 12 }}>{allExpanded ? 'Collapse All' : 'Expand All'}</span>
+        </button>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button className={view === 'list' ? 'btn btn-primary' : 'btn'} onClick={() => setView('list')}><LayoutList size={16} /></button>
+          <button className={view === 'kanban' ? 'btn btn-primary' : 'btn'} onClick={() => setView('kanban')}><Columns size={16} /></button>
+        </div>
       </div>
 
-      {filtered.length === 0 && <div className="empty-state"><div style={{ fontSize:32 }}>☑</div><div style={{ marginTop:8 }}>No tasks assigned to you.</div></div>}
+      {/* ─── List View ─── */}
+      {view === 'list' && groupedTasks.map(([proj, pTasks]) => (
+        <div key={proj} style={{ border: '1px solid var(--brd)', borderRadius: 12, background: 'var(--bg)', overflow: 'hidden', marginBottom: 16 }}>
+          <div style={{ padding: '10px 16px', background: 'var(--bg2)', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--brd)' }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#378ADD' }} />
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{proj}</div>
+            <div style={{ fontSize: 11, color: 'var(--txt3)' }}>({pTasks.length} tasks)</div>
+          </div>
 
-      {view === 'list' && filtered.length > 0 && groupEntries.map(([projName, ptasks]) => (
-        <div key={projName} className="card" style={{ padding:0, overflow:'hidden', marginBottom:12 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', background:'var(--bg2)', borderBottom:'0.5px solid var(--brd)' }}>
-            <div className="proj-dot" style={{ background:'#378ADD' }}/>
-            <div style={{ fontSize:14, fontWeight:500, flex:1, color:'var(--txt)' }}>{projName}</div>
-            <div style={{ fontSize:12, color:'var(--txt3)' }}>{ptasks.length} task{ptasks.length!==1?'s':''}</div>
-          </div>
-          <div style={{ padding:'8px 16px 12px 16px' }}>
-            {ptasks.map(t => <TaskRow key={t.id} task={t}/>)}
-          </div>
+          {pTasks.map(t => {
+            const tSubs = subtasks.filter(s => s.parent_task_id === t.id)
+            const tPct = tSubs.length ? Math.round((tSubs.filter(s => s.status === 'Completed').length / tSubs.length) * 100) : (t.status === 'Completed' ? 100 : 0)
+            const isTaskOpen = expanded[t.id] ?? true
+
+            return (
+              <div key={t.id} style={{ borderBottom: '1px solid var(--brd)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '10px 16px 10px 12px', gap: 12 }}>
+                  <div style={{ width: 20 }}>
+                    {tSubs.length > 0 && <ChevronRight size={14} style={{ transform: isTaskOpen ? 'rotate(90deg)' : '', transition: '0.2s', cursor: 'pointer', color: 'var(--txt3)' }} onClick={() => setExpanded(prev => ({ ...prev, [t.id]: !isTaskOpen }))} />}
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <StatusDot status={t.status} />
+                    <div style={{ fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</div>
+                    <div style={{ display: 'flex' }}>
+                      {[t.owner, ...(t.assignees || [])].filter(Boolean).slice(0, 3).map((name, i) => (
+                        <div key={i} title={name} style={{ width: 18, height: 18, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid var(--bg)', marginLeft: i > 0 ? -6 : 0 }}>{ini(name)}</div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                    <div style={{ width: 195, fontSize: 11, color: 'var(--txt3)', textAlign: 'right', paddingRight: 24, whiteSpace: 'nowrap' }}>
+                      {t.start_date || '—'} <span style={{ color: 'var(--brd)', margin: '0 4px' }}>→</span> {t.end_date || '—'}
+                    </div>
+                    <div style={{ width: 100, display: 'flex', alignItems: 'center', gap: 8, paddingRight: 20 }}>
+                      <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${tPct}%`, height: '100%', background: 'var(--txt3)' }} /></div>
+                      <span style={{ fontSize: 10, width: 25, color: 'var(--txt3)' }}>{tPct}%</span>
+                    </div>
+                    <div style={{ width: 95 }}><StatusPicker current={t.status} onUpdate={(val) => handleStatusChange(t.id, val, false)} /></div>
+                  </div>
+                </div>
+
+                {tSubs.length > 0 && isTaskOpen && (
+                  <div style={{ background: 'rgba(255,255,255,0.01)' }}>{tSubs.map(s => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '6px 16px 6px 56px', gap: 12 }}>
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: 12, color: 'var(--txt2)' }}>↳ {s.topic}</div>
+                        {s.owner && <div style={{ width: 16, height: 16, borderRadius: '50%', fontSize: 7, fontWeight: 800, background: AVATAR_BG[9 % 6], color: AVATAR_CL[9 % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--brd)' }}>{ini(s.owner)}</div>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                        <div style={{ width: 195, fontSize: 11, color: 'var(--txt3)', textAlign: 'right', paddingRight: 24, whiteSpace: 'nowrap' }}>{s.start_date} <span style={{ color: 'var(--brd)', margin: '0 4px' }}>→</span> {s.end_date}</div>
+                        <div style={{ width: 100, paddingRight: 20 }} />
+                        <div style={{ width: 95 }}><StatusPicker current={s.status} onUpdate={(val) => handleStatusChange(s.id, val, true)} /></div>
+                      </div>
+                    </div>
+                  ))}</div>
+                )}
+              </div>
+            )
+          })}
         </div>
       ))}
-
+      
+      {/* ─── Kanban View ─── */}
       {view === 'kanban' && (
-        <div className="kanban-grid">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, alignItems: 'start' }}>
           {STATUSES.map(status => {
-            const group = filtered.filter(t => t.status === status)
+            const group = myTasks.filter(t => t.status === status)
             return (
-              <div key={status} className="kanban-col" onDragOver={handleDragOver} onDrop={e => handleDrop(e, status)}>
-                <div className="col-header">
-                  <div style={{ width:8, height:8, borderRadius:'50%', background: DOT_CLR[status] }}/>
-                  {status}<span className="col-count">{group.length}</span>
+              <div key={status} style={{ background: 'var(--bg2)', borderRadius: 12, padding: 12, minHeight: '70vh' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '0 4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><StatusDot status={status} /><span style={{ fontSize: 13, fontWeight: 700 }}>{status}</span></div>
+                  <span style={{ fontSize: 11, background: 'var(--brd)', padding: '2px 8px', borderRadius: 10, color: 'var(--txt3)', fontWeight: 600 }}>{group.length}</span>
                 </div>
-                {group.length === 0 ? <div className="col-empty">Drop tasks here</div> : group.map(t => <KanbanCard key={t.id} task={t}/>)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {group.map(t => (
+                    <div key={t.id} onClick={() => router.push(`/tasks/${t.id}`)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 8, padding: 12, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                      <div style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>{t.project_name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 10 }}>{t.topic}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: 10, color: 'var(--txt3)' }}><Calendar size={11} style={{ marginRight: 4 }} /> {t.end_date}</div>
+                        <div style={{ display: 'flex' }}>
+                          {[t.owner, ...(t.assignees || [])].filter(Boolean).slice(0, 2).map((name, i) => (
+                            <div key={i} style={{ width: 16, height: 16, borderRadius: '50%', fontSize: 7, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid var(--bg)', marginLeft: i > 0 ? -4 : 0 }}>{ini(name)}</div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )
           })}
