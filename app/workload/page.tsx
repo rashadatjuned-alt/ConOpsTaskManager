@@ -6,9 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { StatusDot } from '@/components/ui/StatusPill'
 import { 
-  Users, CheckCircle2, ListTodo, Clock, AlertCircle, X, 
-  Settings, ArrowLeft, History, Hourglass, CalendarDays, 
-  Filter, LayoutGrid, Activity, BarChart3 
+  Users, CheckCircle2, ListTodo, Clock, X, 
+  Settings, ArrowLeft, Filter, LayoutGrid, Activity 
 } from 'lucide-react'
 
 const STATUSES = ['Not Started','In Progress','On-Hold','Completed'] as const
@@ -29,7 +28,6 @@ export default function Workload() {
   const [tasks, setTasks] = useState<any[]>([])
   const [subtasks, setSubtasks] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
-  const [myRole, setMyRole] = useState('')
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('overview')
   const [projFilter, setProjFilter] = useState('All')
@@ -48,8 +46,6 @@ export default function Workload() {
     const loadData = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
-      const { data: me } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
-      setMyRole(me?.role || '')
 
       const [u, t, s, p] = await Promise.all([
         supabase.from('Users').select('id,full_name,email,role').order('full_name'),
@@ -63,59 +59,39 @@ export default function Workload() {
     loadData()
   }, [])
 
-  const today = new Date(); today.setHours(0,0,0,0)
-  const nextWeek = new Date(); nextWeek.setDate(today.getDate() + 7)
-  const thisMonth = today.getMonth(); const thisYear = today.getFullYear()
-
   const memberStats = useMemo(() => {
     return users.filter(u => u.role !== 'Admin').map((u, idx) => {
       const name = u.full_name || u.email
       const uTasks = tasks.filter(t => (t.owner||'').toLowerCase().includes(name.toLowerCase()) || (t.assignees || []).some((a:string) => a.toLowerCase().includes(name.toLowerCase())))
       const filtered = projFilter === 'All' ? uTasks : uTasks.filter(t => t.project_name === projFilter)
-      const counts = { 'Not Started': filtered.filter(t => t.status === 'Not Started').length, 'In Progress': filtered.filter(t => t.status === 'In Progress').length, 'On-Hold': filtered.filter(t => t.status === 'On-Hold').length, 'Completed': filtered.filter(t => t.status === 'Completed').length }
-      const userSubtasks = subtasks.filter(s => (s.owner||'').toLowerCase().includes(name.toLowerCase()))
       const openTasks = filtered.filter(t => t.status !== 'Completed').length
 
       return {
-        ...u, name, total: filtered.length, counts, subCount: userSubtasks.length, openTasks,
+        ...u, name, openTasks,
+        counts: {
+          'Not Started': filtered.filter(t => t.status === 'Not Started').length,
+          'In Progress': filtered.filter(t => t.status === 'In Progress').length,
+          'On-Hold': filtered.filter(t => t.status === 'On-Hold').length,
+          'Completed': filtered.filter(t => t.status === 'Completed').length,
+        },
         load: openTasks >= thresholds.overload ? 'overload' : openTasks >= thresholds.heavy ? 'heavy' : openTasks >= thresholds.normal ? 'moderate' : 'light',
         color: AVATAR_BG[idx % 6], textColor: AVATAR_CL[idx % 6]
       }
     })
-  }, [users, tasks, subtasks, projFilter, thresholds])
-
-  const globalMetrics = useMemo(() => {
-    const fTasks = projFilter === 'All' ? tasks : tasks.filter(t => t.project_name === projFilter)
-    const mTasks = fTasks.map(t => ({ ...t, dateObj: t.end_date ? new Date(t.end_date) : null }))
-    return {
-      'Not Started': mTasks.filter(t => t.status === 'Not Started'),
-      'In Progress': mTasks.filter(t => t.status === 'In Progress'),
-      'On-Hold': mTasks.filter(t => t.status === 'On-Hold'),
-      'Completed': mTasks.filter(t => t.status === 'Completed'),
-      'Overdue': mTasks.filter(t => t.dateObj && t.dateObj < today && t.status !== 'Completed'),
-      'Due This Week': mTasks.filter(t => t.dateObj && t.dateObj >= today && t.dateObj <= nextWeek && t.status !== 'Completed'),
-      'Due This Month': mTasks.filter(t => t.dateObj && t.dateObj.getMonth() === thisMonth && t.dateObj.getFullYear() === thisYear && t.status !== 'Completed'),
-    }
-  }, [tasks, projFilter, today])
+  }, [users, tasks, projFilter, thresholds])
 
   if (loading) return <AppShell title="Workload Oversight">Loading...</AppShell>
 
   return (
     <AppShell title="Workload Oversight">
-      
-      {/* HEADER */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={() => router.push('/dashboard')} className="tv-btn" style={{ padding: '8px' }}><ArrowLeft size={18}/></button>
-          <div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--txt-main)' }}>Team Bandwidth</h2>
-            <p style={{ color: 'var(--txt-muted)', fontSize: 13, margin: 0 }}>Analyzing distribution across {projFilter}.</p>
-          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--txt-main)' }}>Team Bandwidth</h2>
         </div>
         <button className="tv-btn" onClick={() => setShowSettings(true)}><Settings size={14} style={{ marginRight: 6 }}/> Thresholds</button>
       </div>
 
-      {/* TOOLBAR */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--util-bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px' }}>
           <Filter size={14} color="var(--txt-muted)" />
@@ -138,20 +114,6 @@ export default function Workload() {
         </div>
       </div>
 
-      {/* METRIC CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
-        {['Not Started', 'In Progress', 'On-Hold', 'Completed'].map(id => {
-          const count = globalMetrics[id as keyof typeof globalMetrics].length
-          return (
-            <div key={id} onClick={() => count > 0 && setShowModal(id)} style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6 }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--txt-main)' }}>{count}</div>
-              <div style={{ fontSize: 10, color: 'var(--txt-muted)', fontWeight: 700, textTransform: 'uppercase' }}>{id}</div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* TABS */}
       {tab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {memberStats.map(m => (
@@ -190,34 +152,17 @@ export default function Workload() {
               <div style={{ width: 24, fontSize: 13, fontWeight: 800, color: 'var(--txt-label)' }}>#{idx + 1}</div>
               <div style={{ width: 200, display: 'flex', alignItems: 'center', gap: 12 }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: m.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{ini(m.name)}</div><div style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt-main)' }}>{m.name}</div></div>
               <div style={{ flex: 1 }}><div style={{ height: 8, background: 'var(--util-bg)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${Math.min((m.openTasks / thresholds.overload) * 100, 100)}%`, height: '100%', background: m.load === 'overload' ? 'var(--sl-over)' : 'var(--accent)' }} /></div></div>
-              <div style={{ width: 100, textAlign: 'right' }}><div style={{ fontSize: 16, fontWeight: 800, color: 'var(--txt-main)' }}>{m.total}</div><div style={{ fontSize: 10, color: 'var(--txt-muted)', textTransform: 'uppercase' }}>Lifetime</div></div>
+              <div style={{ width: 60, textAlign: 'right' }}><div style={{ fontSize: 16, fontWeight: 800, color: 'var(--txt-main)' }}>{m.openTasks}</div></div>
             </div>
           ))}
         </div>
       )}
 
-      {/* POPUP MODAL */}
-      {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setShowModal(null)}>
-          <div style={{ width: '90%', maxWidth: 900, background: 'var(--card-bg)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', color: 'var(--txt-main)' }}>Team {showModal} Summary</div><button onClick={() => setShowModal(null)} style={{ background: 'none', border: 'none', color: 'var(--txt-muted)', cursor: 'pointer' }}><X size={20}/></button></div>
-            <div style={{ padding: 0, maxHeight: '70vh', overflowY: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead><tr style={{ fontSize: 11, color: 'var(--txt-label)', textTransform: 'uppercase', background: 'var(--util-bg)' }}><th style={{ padding: '14px 20px' }}>Task Title</th><th>Project</th><th>Progress</th><th style={{ textAlign: 'right', paddingRight: 20 }}>Members</th></tr></thead>
-                <tbody>{globalMetrics[showModal as keyof typeof globalMetrics].map(t => { const subs = subtasks.filter(s => s.parent_task_id === t.id); const pct = subs.length ? Math.round((subs.filter(s => s.status === 'Completed').length / subs.length) * 100) : (t.status === 'Completed' ? 100 : 0); return (<tr key={t.id} style={{ borderBottom: '1px solid var(--border)', fontSize: 13 }}><td style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</td><td style={{ color: 'var(--txt-muted)' }}>{t.project_name}</td><td style={{ color: 'var(--txt-main)' }}>{pct}%</td><td style={{ textAlign: 'right', paddingRight: 20 }}><div style={{ display: 'flex', justifyContent: 'flex-end' }}>{[t.owner, ...(t.assignees || [])].filter(Boolean).map((name, i) => (<div key={i} title={name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--card-bg)', marginLeft: -8 }}>{ini(name)}</div>))}</div></td></tr>)})}</tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* THRESHOLD SETTINGS */}
       {showSettings && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
           <div style={{ width:400, padding:24, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12 }}><div style={{ display:'flex', justifyContent:'space-between', marginBottom:20 }}><div style={{ fontWeight:700, color: 'var(--txt-main)' }}>Capacity Thresholds</div><X size={18} cursor="pointer" color="var(--txt-muted)" onClick={() => setShowSettings(false)}/></div>{[ { k:'normal', l:'Moderate Start' }, { k:'heavy', l:'Heavy Start' }, { k:'overload', l:'Overload Start' } ].map(row => (<div key={row.k} style={{ marginBottom: 20 }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}><label style={{ fontSize:11, fontWeight:800, color:'var(--txt-muted)' }}>{row.l}</label><span style={{ fontWeight: 800, color: 'var(--txt-main)' }}>{draftT[row.k as keyof Thresholds]}</span></div><input type="range" min="1" max="25" style={{ width:'100%' }} value={draftT[row.k as keyof Thresholds]} onChange={e => setDraftT({...draftT, [row.k]: parseInt(e.target.value)})} /></div>))}<button className="tv-btn" style={{ width:'100%', marginTop:10 }} onClick={() => { setThresholds(draftT); localStorage.setItem('workload-thresholds', JSON.stringify(draftT)); setShowSettings(false); }}>Save Configurations</button></div>
         </div>
       )}
-
     </AppShell>
   )
 }
