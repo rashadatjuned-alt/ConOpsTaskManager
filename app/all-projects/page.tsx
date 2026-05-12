@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { StatusPill, StatusDot } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, LayoutList, Info, X, Calendar, Clock, Search, Plus, ChevronsDownUp, ChevronsUpDown, Users } from 'lucide-react'
+import { ChevronRight, LayoutList, Columns, Info, X, Calendar, Clock, Search, Plus, ChevronsUpDown, Users } from 'lucide-react'
 import Link from 'next/link'
 
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
@@ -22,11 +22,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: any) {
   const projTasks = tasks.filter((t: any) => t.project_name === proj.name)
   const done = projTasks.filter((t: any) => t.status === 'Completed').length
   const pct = projTasks.length ? Math.round((done / projTasks.length) * 100) : 0
-
-  const members = (proj.members || [])
-    .map((id: string) => allUsers.find((u: any) => u.id === id))
-    .filter(Boolean)
-
   const startDate = projTasks.map((t: any) => t.start_date).filter(Boolean).sort()[0] || '—'
   const endDate = projTasks.map((t: any) => t.end_date).filter(Boolean).sort().reverse()[0] || '—'
   
@@ -56,7 +51,7 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: any) {
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 8 }}>Task Breakdown</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
               {[ { l: 'Not Started', b: '#F1EFE8', c: '#5F5E5A' }, { l: 'In Progress', b: '#E6F1FB', c: '#185FA5' }, { l: 'On-Hold', b: '#FAEEDA', c: '#854F0B' }, { l: 'Completed', b: '#EAF3DE', c: '#3B6D11' } ].map(b => (
-                <div key={b.l} style={{ background: b.b, borderRadius: 'var(--r)', padding: '8px 4px', textAlign: 'center' }}><div style={{ fontSize: 16, fontWeight: 800, color: b.c }}>{projTasks.filter(t => t.status === b.l).length}</div><div style={{ fontSize: 8, color: b.c, fontWeight: 700 }}>{b.l}</div></div>
+                <div key={b.l} style={{ background: b.b, borderRadius: 'var(--r)', padding: '6px 8px', textAlign: 'center' }}><div style={{ fontSize: 16, fontWeight: 800, color: b.c }}>{projTasks.filter(t => t.status === b.l).length}</div><div style={{ fontSize: 8, color: b.c, fontWeight: 700 }}>{b.l}</div></div>
               ))}
             </div>
           </div>
@@ -78,7 +73,7 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: any) {
   )
 }
 
-// ─── MAIN COMPONENT ────────────────────────────────────────────────────────
+// ─── MAIN PAGE ───────────────────────────────────────────────────────────────
 export default function AllProjects() {
   const router = useRouter()
   const [projects, setProjects] = useState<any[]>([])
@@ -89,12 +84,12 @@ export default function AllProjects() {
   const [collTask, setCollTask] = useState<Record<string, boolean>>({})
   const [infoProj, setInfoProj] = useState<any | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [allExpanded, setAllExpanded] = useState(true)
+  const [view, setView] = useState<'list' | 'kanban'>('list')
 
   useEffect(() => {
     const load = async () => {
       const [p, t, s, us] = await Promise.all([
-        supabase.from('Projects').select('*').order('name'),
+        supabase.from('Projects').select('*'),
         supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Subtasks').select('*'),
         supabase.from('Users').select('id,full_name,email,role'),
@@ -110,18 +105,11 @@ export default function AllProjects() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [projects, searchTerm])
 
-  const toggleAll = () => {
-    const next = !allExpanded
-    setAllExpanded(next)
-    const newState: Record<string, boolean> = {}
-    projects.forEach(p => { newState[p.id] = !next })
-    setCollapsed(newState)
-  }
-
   return (
     <AppShell title="All Projects Portfolio">
       {infoProj && <ProjectInfoModal proj={infoProj} tasks={tasks} allUsers={allUsers} onClose={() => setInfoProj(null)} />}
 
+      {/* Header Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <div style={{ position: 'relative', width: 280 }}>
@@ -129,83 +117,27 @@ export default function AllProjects() {
             <input type="text" placeholder="Search projects..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} 
               style={{ width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8, border: '1px solid var(--brd)', background: 'var(--bg)', color: 'var(--txt)', fontSize: 13, outline: 'none' }} />
           </div>
-          <button className="tv-btn" onClick={toggleAll}><ChevronsUpDown size={14}/></button>
         </div>
-        <Link href="/projects/create" className="tv-btn tv-btn-primary"><Plus size={14} style={{ marginRight: 4 }}/> New Project</Link>
+        <div style={{ display: 'flex', gap: 6 }}>
+           <button className={view === 'list' ? 'btn btn-primary' : 'btn'} onClick={() => setView('list')} title="List View"><LayoutList size={16} /></button>
+           <button className={view === 'kanban' ? 'btn btn-primary' : 'btn'} onClick={() => setView('kanban')} title="Kanban View"><Columns size={16} /></button>
+           <Link href="/projects/create" className="btn btn-primary" style={{ marginLeft: 8 }}><Plus size={14}/> New Project</Link>
+        </div>
       </div>
 
-      {sortedProjects.map(proj => {
-        const ptasks = tasks.filter(t => t.project_name === proj.name)
-        const pct = ptasks.length ? Math.round((ptasks.filter(t => t.status === 'Completed').length / ptasks.length) * 100) : 0
-        const isOpen = !collapsed[proj.id]
-
-        return (
-          <div key={proj.id} style={{ border: '1px solid var(--brd)', borderRadius: 12, background: 'var(--bg)', overflow: 'hidden', marginBottom: 12 }}>
-            <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', cursor: 'pointer', background: isOpen ? 'var(--bg2)' : 'transparent' }} onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-                <ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : '', transition: '0.2s', color: 'var(--txt3)' }} />
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: proj.color_code || '#378ADD' }} />
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{proj.name}</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 120 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, width: 30, color: 'var(--txt3)' }}>{pct}%</span>
-                  <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: proj.color_code || '#378ADD' }} /></div>
+      {view === 'list' ? (
+        /* ─── LIST VIEW ─── */
+        sortedProjects.map(proj => {
+          const ptasks = tasks.filter(t => t.project_name === proj.name)
+          const pct = ptasks.length ? Math.round((ptasks.filter(t => t.status === 'Completed').length / ptasks.length) * 100) : 0
+          const isOpen = !collapsed[proj.id]
+          return (
+            <div key={proj.id} style={{ border: '1px solid var(--brd)', borderRadius: 12, background: 'var(--bg)', overflow: 'hidden', marginBottom: 12 }}>
+              <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', cursor: 'pointer', background: isOpen ? 'var(--bg2)' : 'transparent' }} onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                  <ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : '', transition: '0.2s', color: 'var(--txt3)' }} />
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: proj.color_code || '#378ADD' }} />
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{proj.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--txt3)' }}>({ptasks.length} tasks)</div>
                 </div>
-                <button onClick={e => { e.stopPropagation(); setInfoProj(proj) }} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><Info size={16}/></button>
-              </div>
-            </div>
-
-            {isOpen && (
-              <div style={{ padding: '0 0 8px 0' }}>
-                {ptasks.map(t => {
-                  const tSubs = subtasks.filter(s => s.parent_task_id === t.id)
-                  const tPct = tSubs.length ? Math.round((tSubs.filter(s => s.status === 'Completed').length / tSubs.length) * 100) : (t.status === 'Completed' ? 100 : 0)
-                  const isTaskOpen = !collTask[t.id]
-
-                  return (
-                    <div key={t.id} style={{ borderTop: '1px solid var(--brd)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 8px 40px', gap: 12 }}>
-                        <div style={{ width: 20 }}>{tSubs.length > 0 && <ChevronRight size={13} style={{ transform: isTaskOpen ? 'rotate(90deg)' : '', cursor: 'pointer' }} onClick={() => setCollTask(c => ({...c, [t.id]: !c[t.id]}))} />}</div>
-                        <div style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</div>
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-                          {/* DATES COLUMN - Fixed width and No Wrap to prevent breaking */}
-                          <div style={{ width: 190, fontSize: 11, color: 'var(--txt3)', textAlign: 'right', paddingRight: 24, whiteSpace: 'nowrap' }}>
-                            {t.start_date} <span style={{ color: 'var(--brd)', margin: '0 4px' }}>→</span> {t.end_date}
-                          </div>
-                          <div style={{ width: 100, display: 'flex', alignItems: 'center', gap: 8, paddingRight: 20 }}>
-                            <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${tPct}%`, height: '100%', background: 'var(--txt3)' }} /></div>
-                            <span style={{ fontSize: 10, width: 25, color: 'var(--txt3)' }}>{tPct}%</span>
-                          </div>
-                          <div style={{ width: 95 }}><StatusPill status={t.status} /></div>
-                          <div style={{ width: 60, textAlign: 'right' }}><button className="tv-btn" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => router.push(`/tasks/${t.id}`)}>Edit</button></div>
-                        </div>
-                      </div>
-
-                      {tSubs.length > 0 && isTaskOpen && (
-                        <div>{tSubs.map(s => (
-                          <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '4px 16px 4px 72px', gap: 12 }}>
-                            <div style={{ flex: 1, fontSize: 12, color: 'var(--txt2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>↳ {s.topic}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-                              <div style={{ width: 190, fontSize: 11, color: 'var(--txt3)', textAlign: 'right', paddingRight: 24, whiteSpace: 'nowrap' }}>
-                                {s.start_date} <span style={{ color: 'var(--brd)', margin: '0 4px' }}>→</span> {s.end_date}
-                              </div>
-                              <div style={{ width: 100, paddingRight: 20 }} />
-                              <div style={{ width: 95 }}><StatusPill status={s.status} /></div>
-                              <div style={{ width: 60 }} />
-                            </div>
-                          </div>
-                        ))}</div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </AppShell>
-  )
-}
+                <div style={{ display: 'flex', alignItems: 'center', gap
