@@ -289,7 +289,7 @@ export default function CreateProject() {
           <div className="tv-section-title">
             Project Team
             <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>
-              Select members (Admins excluded)
+              Select project members
             </span>
           </div>
           <div className="tv-chip-container">
