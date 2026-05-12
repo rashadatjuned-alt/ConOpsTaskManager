@@ -1,646 +1,199 @@
 'use client'
 export const dynamic = 'force-dynamic'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { useRouter, useParams } from 'next/navigation'
-import type { Status, Resource } from '@/types'
+import { useRouter } from 'next/navigation'
+import { StatusPill } from '@/components/ui/StatusPill'
+import { ArrowLeft, User, Calendar, Layers, CheckCircle2 } from 'lucide-react'
 
-const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
-const TYPES    = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
+export default function TaskDetail({ params }: { params: { id: string } }) {
+  const router = useRouter()
+  const [task, setTask] = useState<any>(null)
+  const [subtasks, setSubtasks] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-function nextRecurrence(start: string, end: string, type: string) {
-  const duration = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 864e5)
-  const d = new Date(start)
-  if (type === 'Weekly') d.setDate(d.getDate() + 7)
-  else if (type === 'Monthly') d.setMonth(d.getMonth() + 1)
-  else if (type === 'Quarterly') d.setMonth(d.getMonth() + 3)
-  else if (type === 'Semi-annually') d.setMonth(d.getMonth() + 6)
-  else if (type === 'Annually') d.setFullYear(d.getFullYear() + 1)
-  const newStart = d.toISOString().split('T')[0]
-  const newEnd = new Date(d.getTime() + duration * 864e5).toISOString().split('T')[0]
-  return { start: newStart, end: newEnd }
-}
+  useEffect(() => {
+    const loadData = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
 
-function assigneesFromRow(row: any): string[] {
-  if (Array.isArray(row.assignees) && row.assignees.length > 0) return row.assignees
-  if (row.owner) return row.owner.split(',').map((s: string) => s.trim()).filter(Boolean)
-  return []
-}
-
-export default function TaskDetail() {
-  const router   = useRouter()
-  const { id }   = useParams<{ id: string }>()
-  const [task,         setTask]         = useState<any>(null)
-  const [subtasks,     setSubtasks]     = useState<any[]>([])
-  const [projectTeam,  setProjectTeam]  = useState<any[]>([])
-  const [myRole,       setMyRole]       = useState('')
-  const [editing,      setEditing]      = useState(false)
-  const [saving,       setSaving]       = useState(false)
-  const [cloning,      setCloning]      = useState(false)
-  const [deleting,     setDeleting]     = useState(false)
-  const [error,        setError]        = useState('')
-  const [success,      setSuccess]      = useState('')
-  const [loading,      setLoading]      = useState(true)
-
-  // local edit state
-  const [editTask,     setEditTask]     = useState<any>(null)
-  const [editSubtasks, setEditSubtasks] = useState<any[]>([])
-  const [resources,    setResources]    = useState<Resource[]>([])
-
-  const loadTask = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-    const { data: me } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
-    setMyRole(me?.role || 'Team Member')
-
-    const [{ data: t }, { data: s }] = await Promise.all([
-      supabase.from('Tasks').select('*').eq('id', id).single(),
-      supabase.from('Subtasks').select('*').eq('parent_task_id', id).order('id'),
-    ])
-
-    if (!t) { setLoading(false); return }
-    setTask(t)
-    setSubtasks(s || [])
-    setResources(Array.isArray(t.resources) ? t.resources : [])
-
-    // Load project team
-    if (t.project_name) {
-      const { data: proj } = await supabase.from('Projects').select('members').eq('name', t.project_name).single()
-      if (proj?.members?.length) {
-        const { data: users } = await supabase.from('Users').select('id,full_name,role').in('id', proj.members)
-        setProjectTeam((users || []).filter((u: any) => u.role !== 'Admin'))
-      } else {
-        const { data: users } = await supabase.from('Users').select('id,full_name,role')
-        setProjectTeam((users || []).filter((u: any) => u.role !== 'Admin'))
+      // Fetch Task
+      const { data: tData } = await supabase.from('Tasks').select('*').eq('id', params.id).single()
+      if (!tData) {
+        router.push('/dashboard')
+        return
       }
+      setTask(tData)
+
+      // Fetch Subtasks
+      const { data: sData } = await supabase.from('Subtasks').select('*').eq('parent_task_id', params.id).order('created_at')
+      setSubtasks(sData || [])
+      setLoading(false)
     }
-    setLoading(false)
-  }, [id])
+    loadData()
+  }, [params.id, router])
 
-  useEffect(() => { loadTask() }, [loadTask])
+  if (loading) return <AppShell title="Task Context">Loading operation details...</AppShell>
 
-  const startEdit = () => {
-    setEditTask({ ...task })
-    setEditSubtasks(subtasks.map((s: any) => ({ ...s })))
-    setEditing(true)
-    setError('')
-  }
-
-  const cancelEdit = () => {
-    setEditing(false)
-    setEditTask(null)
-    setEditSubtasks([])
-    setResources(Array.isArray(task.resources) ? task.resources : [])
-    setError('')
-  }
-
-  const canManage = myRole === 'Admin' || myRole === 'Manager'
-
-  const handleStatusChange = async (newStatus: string) => {
-    if (newStatus === 'Completed' && subtasks.some((s: any) => s.status !== 'Completed')) {
-      setError('All subtasks must be Completed first.')
-      return
-    }
-    setError('')
-    const updated = { ...task, status: newStatus }
-    setTask(updated)
-    await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
-
-    // auto-create next recurrence
-    if (newStatus === 'Completed' && task.type !== 'One-time') {
-      const { start, end } = nextRecurrence(task.start_date, task.end_date, task.type)
-      const { data: newTask } = await supabase.from('Tasks').insert({
-        project_name: task.project_name,
-        topic: task.topic,
-        description: task.description,
-        assignees: task.assignees,
-        type: task.type,
-        start_date: start,
-        end_date: end,
-        status: 'Not Started',
-        resources: task.resources || [],
-        tags: task.tags || [],
-      }).select().single()
-
-      if (newTask) {
-        for (const sub of subtasks) {
-          await supabase.from('Subtasks').insert({
-            parent_task_id: newTask.id,
-            topic: sub.topic,
-            description: sub.description,
-            assignees: assigneesFromRow(sub),
-            start_date: start,
-            end_date: end,
-            status: 'Not Started',
-          })
-        }
-        setSuccess(`✅ Next ${task.type} instance created (${start}).`)
-        setTimeout(() => setSuccess(''), 4000)
-      }
-    }
-  }
-
-  const handleSave = async () => {
-    setError(''); setSaving(true)
-    if (!editTask.topic?.trim()) { setError('Task title is required.'); setSaving(false); return }
-    if (editTask.status === 'Completed' && editSubtasks.some((s: any) => s.status !== 'Completed')) {
-      setError('All subtasks must be Completed before marking task as Completed.')
-      setSaving(false); return
-    }
-    for (const s of editSubtasks) {
-      if (!s.topic?.trim()) { setError('All subtask titles are required.'); setSaving(false); return }
-    }
-
-    try {
-      await supabase.from('Tasks').update({
-        topic: editTask.topic.trim(),
-        description: editTask.description?.trim() || '',
-        assignees: editTask.assignees || [],
-        type: editTask.type,
-        start_date: editTask.start_date,
-        end_date: editTask.end_date,
-        status: editTask.status,
-        resources: resources,
-      }).eq('id', id)
-
-      for (const s of editSubtasks) {
-        const payload = {
-          topic: s.topic.trim(),
-          description: s.description?.trim() || '',
-          assignees: s.assignees || [],
-          start_date: s.start_date,
-          end_date: s.end_date,
-          status: s.status,
-        }
-        if (s.isNew) {
-          await supabase.from('Subtasks').insert({ ...payload, parent_task_id: Number(id) })
-        } else {
-          await supabase.from('Subtasks').update(payload).eq('id', s.id)
-        }
-      }
-
-      await loadTask()
-      setEditing(false)
-      setSuccess('✅ Changes saved!')
-      setTimeout(() => setSuccess(''), 3000)
-    } catch (e: any) { setError(e.message) }
-    setSaving(false)
-  }
-
-  const handleClone = async () => {
-    setCloning(true)
-    const { data: newTask } = await supabase.from('Tasks').insert({
-      project_name: task.project_name,
-      topic: `${task.topic} (Copy)`,
-      description: task.description,
-      assignees: task.assignees,
-      type: task.type,
-      start_date: task.start_date,
-      end_date: task.end_date,
-      status: 'Not Started',
-      resources: task.resources || [],
-    }).select().single()
-
-    if (newTask) {
-      for (const sub of subtasks) {
-        await supabase.from('Subtasks').insert({
-          parent_task_id: newTask.id,
-          topic: sub.topic,
-          description: sub.description,
-          assignees: assigneesFromRow(sub),
-          start_date: sub.start_date,
-          end_date: sub.end_date,
-          status: 'Not Started',
-        })
-      }
-      router.push(`/tasks/${newTask.id}`)
-    }
-    setCloning(false)
-  }
-
-  const handleDelete = async () => {
-    if (!confirm(`Delete "${task.topic}"? This cannot be undone.`)) return
-    setDeleting(true)
-    await supabase.from('Subtasks').delete().eq('parent_task_id', id)
-    await supabase.from('Tasks').delete().eq('id', id)
-    router.back()
-  }
-
-  const toggleAssignee = (name: string) => {
-    const cur: string[] = editTask.assignees || []
-    setEditTask((p: any) => ({
-      ...p,
-      assignees: cur.includes(name) ? cur.filter(a => a !== name) : [...cur, name],
-    }))
-  }
-
-  const toggleSubAssignee = (subId: string, name: string) => {
-    setEditSubtasks(prev => prev.map((s: any) => {
-      if (String(s.id) !== String(subId)) return s
-      const cur: string[] = s.assignees || []
-      return { ...s, assignees: cur.includes(name) ? cur.filter(a => a !== name) : [...cur, name] }
-    }))
-  }
-
-  const addResource = () => setResources(p => [...p, { sl: p.length + 1, title: '', link: '' }])
-  const updateResource = (i: number, field: 'title' | 'link', val: string) =>
-    setResources(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
-  const removeResource = (i: number) =>
-    setResources(p => p.filter((_, idx) => idx !== i).map((r, idx) => ({ ...r, sl: idx + 1 })))
-
-  const addSubtask = () => setEditSubtasks(p => [...p, {
-    id: `new-${Date.now()}`, topic: '', description: '',
-    assignees: [], start_date: editTask?.start_date || '',
-    end_date: editTask?.end_date || '', status: 'Not Started', isNew: true,
-  }])
-  const updateSub = (id: string, field: string, val: string) =>
-    setEditSubtasks(p => p.map((s: any) => String(s.id) === id ? { ...s, [field]: val } : s))
-  const removeSub = async (s: any) => {
-    if (!s.isNew) {
-      if (!confirm('Delete this subtask?')) return
-      await supabase.from('Subtasks').delete().eq('id', s.id)
-    }
-    setEditSubtasks(p => p.filter((x: any) => String(x.id) !== String(s.id)))
-  }
-
-  if (loading) return <AppShell title="Task Detail"><div style={{ padding: 40, textAlign: 'center' }}>Loading...</div></AppShell>
-  if (!task)   return <AppShell title="Task Detail"><div style={{ color: 'red', padding: 20 }}>Task not found.</div></AppShell>
-
-  const taskAssignees = assigneesFromRow(task)
-  const editAssignees: string[] = editing ? (editTask?.assignees || []) : taskAssignees
-  const isRecurring = task.type && task.type !== 'One-time'
+  const subProgress = subtasks.length === 0 ? 0 : Math.round((subtasks.filter(s => s.status === 'Completed').length / subtasks.length) * 100)
 
   return (
-    <AppShell title={task.topic || 'Task Detail'}>
-      {/* ── INJECTED CSS FOR AUTO LIGHT/DARK MODE (RESPECTS APP TOGGLE) ── */}
-      <style dangerouslySetInnerHTML={{ __html: `
-        /* LIGHT MODE VARIABLES (DEFAULT) */
-        .tv-wrapper {
-          --bg-color: transparent;
-          --card-bg: #ffffff;
-          --subtask-bg: #f3f4f6;
-          --border-color: #e5e7eb;
-          --text-main: #111827;
-          --text-muted: #6b7280;
-          --text-label: #4b5563;
-          --pill-blue-bg: #eff6ff;
-          --pill-blue-txt: #2563eb;
-          --pill-gray-bg: #f3f4f6;
-          --pill-gray-txt: #4b5563;
-          --btn-bg: #ffffff;
-          --btn-hover: #f3f4f6;
-          --btn-delete-bg: #fef2f2;
-          --btn-delete-txt: #ef4444;
-          --btn-delete-hover: #fee2e2;
-          --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
-          --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%232563eb%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-          --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%234b5563%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-        }
-        
-        /* DARK MODE VARIABLES (TRIGGERED BY GLOBAL .dark CLASS OR DATA-THEME) */
-        .dark .tv-wrapper, 
-        [data-theme="dark"] .tv-wrapper {
-          --bg-color: transparent;
-          --card-bg: #1e1e1e;
-          --subtask-bg: #181818;
-          --border-color: #2e2e2e;
-          --text-main: #e5e5e5;
-          --text-muted: #8b8b8b;
-          --text-label: #6b6b6b;
-          --pill-blue-bg: rgba(59, 130, 246, 0.15);
-          --pill-blue-txt: #60a5fa;
-          --pill-gray-bg: rgba(255, 255, 255, 0.05);
-          --pill-gray-txt: #a3a3a3;
-          --btn-bg: #2a2a2a;
-          --btn-hover: #333333;
-          --btn-delete-bg: rgba(239, 68, 68, 0.1);
-          --btn-delete-txt: #ef4444;
-          --btn-delete-hover: rgba(239, 68, 68, 0.2);
-          --shadow-sm: none;
-          --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2360a5fa%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-          --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a3a3a3%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-        }
-        
-        /* SHARED STYLES */
-        .tv-wrapper { color: var(--text-main); font-size: 14px; display: flex; flex-direction: column; gap: 20px; }
-        .tv-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 12px; }
-        .tv-back-nav { color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 8px; cursor: pointer; background: none; border: none; font-size: 14px; }
-        .tv-back-nav:hover { color: var(--text-main); }
-        .tv-actions { display: flex; gap: 10px; align-items: center; }
-        
-        .tv-btn { background-color: var(--btn-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm); transition: 0.2s; }
-        .tv-btn:hover { background-color: var(--btn-hover); }
-        .tv-btn-primary { background-color: var(--text-main); color: var(--card-bg); }
-        .tv-btn-primary:hover { opacity: 0.9; }
-        .tv-btn-danger { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); border-color: transparent; box-shadow: none; }
-        .tv-btn-danger:hover { background-color: var(--btn-delete-hover); }
-        .tv-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        .tv-status-select { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); border: 1px solid transparent; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; outline: none; appearance: none; padding-right: 24px; background-image: var(--arrow-blue); background-repeat: no-repeat; background-position: right 10px top 50%; background-size: 8px auto; }
-        .tv-status-sub { background-color: var(--pill-gray-bg); color: var(--pill-gray-txt); background-image: var(--arrow-gray); padding: 4px 10px; padding-right: 20px; font-size: 11px; }
-        .tv-status-sub.in-progress { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); background-image: var(--arrow-blue); }
-        
-        .tv-card { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; box-shadow: var(--shadow-sm); }
-        .tv-section-title { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; }
-        
-        .tv-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
-        .tv-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 16px; }
-        .tv-field { display: flex; flex-direction: column; gap: 6px; }
-        .tv-label { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; letter-spacing: 0.05em; }
-        .tv-val { font-size: 14px; color: var(--text-main); }
-        .tv-val-muted { font-size: 14px; color: var(--text-muted); }
-        
-        .tv-input { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; }
-        .tv-textarea { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; min-height: 80px; resize: vertical; }
-        
-        .tv-table { width: 100%; border-collapse: collapse; text-align: left; }
-        .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
-        .tv-table td { font-size: 13px; color: var(--text-main); padding: 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
-        .tv-table tr:last-child td { border-bottom: none; }
-        .tv-link { color: var(--pill-blue-txt); text-decoration: none; }
-        .tv-link:hover { text-decoration: underline; }
-        
-        .tv-action-col { width: 80px; text-align: right; }
-        .tv-icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; margin-left: 8px; transition: 0.2s; }
-        .tv-icon-btn:hover { color: var(--btn-delete-txt); }
-
-        .tv-chip-container { display: flex; gap: 8px; flex-wrap: wrap; }
-        .tv-chip { background: var(--btn-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 4px 10px; font-size: 12px; color: var(--text-main); cursor: pointer; transition: 0.2s;}
-        .tv-chip.selected { background-color: var(--text-main); color: var(--card-bg); border-color: var(--text-main); }
-        
-        .tv-alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
-        .tv-alert-error { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); }
-        .tv-alert-success { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; }
-        .tv-alert-info { background-color: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-      `}} />
-
-      <div className="tv-wrapper">
-        
-        {/* ── TOP ACTION BAR ── */}
-        <div className="tv-top-bar">
-          <button className="tv-back-nav" onClick={() => router.back()}>
-            <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"></path></svg>
-            Back
-          </button>
-          
-          <div className="tv-actions">
-            <select 
-              className="tv-status-select"
-              value={editing ? editTask.status : task.status}
-              onChange={e => editing ? setEditTask((p: any) => ({ ...p, status: e.target.value })) : handleStatusChange(e.target.value)}
-            >
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
-
-            <button className="tv-btn" onClick={handleClone} disabled={cloning}>
-              {cloning ? 'Cloning...' : 'Clone'}
-            </button>
-
-            {!editing ? (
-              <button className="tv-btn" onClick={startEdit}>✎ Edit</button>
-            ) : (
-              <>
-                <button className="tv-btn tv-btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : '💾 Save'}</button>
-                <button className="tv-btn" onClick={cancelEdit}>Cancel</button>
-              </>
-            )}
-
-            {canManage && !editing && (
-              <button className="tv-btn tv-btn-danger" onClick={handleDelete} disabled={deleting}>
-                {deleting ? '...' : '🗑 Delete'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {error   && <div className="tv-alert tv-alert-error">{error}</div>}
-        {success && <div className="tv-alert tv-alert-success">{success}</div>}
-        {isRecurring && <div className="tv-alert tv-alert-info">🔄 <strong>{task.type} recurring task</strong> — When marked Completed, the next instance is auto-created.</div>}
-
-        {/* ── 1. TASK DETAILS ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">Task Details</div>
-          
-          <div className="tv-grid-2">
-            <div className="tv-field">
-              <span className="tv-label">Task Title</span>
-              {editing 
-                ? <input className="tv-input" value={editTask.topic || ''} onChange={e => setEditTask((p: any) => ({ ...p, topic: e.target.value }))} />
-                : <span className="tv-val">{task.topic}</span>
-              }
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">Project</span>
-              <span className="tv-val">{task.project_name || '—'}</span>
-            </div>
-          </div>
-
-          <div className="tv-field" style={{ marginBottom: 20 }}>
-            <span className="tv-label">Description</span>
-            {editing
-              ? <textarea className="tv-textarea" value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
-              : <span className="tv-val-muted">{task.description || 'No description.'}</span>
-            }
-          </div>
-
-          <div className="tv-grid-4" style={{ marginBottom: 0 }}>
-            <div className="tv-field">
-              <span className="tv-label">Start Date</span>
-              {editing
-                ? <input type="date" className="tv-input" value={editTask.start_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, start_date: e.target.value }))} />
-                : <span className="tv-val">{task.start_date || '—'}</span>
-              }
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">End Date</span>
-              {editing
-                ? <input type="date" className="tv-input" value={editTask.end_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, end_date: e.target.value }))} />
-                : <span className="tv-val">{task.end_date || '—'}</span>
-              }
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">Type of Task</span>
-              {editing
-                ? <select className="tv-input" value={editTask.type || 'One-time'} onChange={e => setEditTask((p: any) => ({ ...p, type: e.target.value }))}>{TYPES.map(t => <option key={t}>{t}</option>)}</select>
-                : <span className="tv-val">{task.type}</span>
-              }
-            </div>
-          </div>
-        </div>
-
-        {/* ── 2. ASSIGNED TO ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">Assigned To</div>
-          <div className="tv-chip-container">
-            {editing ? (
-              projectTeam.map((u: any) => {
-                const sel = editAssignees.includes(u.full_name)
-                return (
-                  <button key={u.id} type="button" onClick={() => toggleAssignee(u.full_name)} className={`tv-chip ${sel ? 'selected' : ''}`}>
-                    {sel ? '✓ ' : ''}{u.full_name}
-                  </button>
-                )
-              })
-            ) : (
-              taskAssignees.length > 0 
-                ? taskAssignees.map(a => <div key={a} className="tv-chip">{a}</div>)
-                : <span className="tv-val-muted">Unassigned</span>
-            )}
-          </div>
-        </div>
-
-        {/* ── 3. RESOURCES ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">
-            Resources
-            {editing && <button className="tv-btn" onClick={addResource}>＋ Add</button>}
-          </div>
-          
-          {resources.length === 0 ? (
-            <div className="tv-val-muted" style={{ textAlign: 'center', padding: '20px 0' }}>No resources attached.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 50 }}>SL</th>
-                  <th>Description</th>
-                  <th>Link</th>
-                  {editing && <th className="tv-action-col">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {resources.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.sl}</td>
-                    <td>
-                      {editing 
-                        ? <input className="tv-input" style={{ padding: '6px 10px' }} value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} /> 
-                        : r.title
-                      }
-                    </td>
-                    <td>
-                      {editing 
-                        ? <input className="tv-input" style={{ padding: '6px 10px' }} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://..." /> 
-                        : (r.link ? <a href={r.link} target="_blank" rel="noopener noreferrer" className="tv-link">{r.link}</a> : '—')
-                      }
-                    </td>
-                    {editing && (
-                      <td className="tv-action-col">
-                        <button className="tv-icon-btn" onClick={() => removeResource(i)}>✕</button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* ── 4. SUBTASKS ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">
-            <div>
-              Subtasks
-              {subtasks.length > 0 && (
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 12, fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>
-                  {subtasks.filter((s: any) => s.status === 'Completed').length} / {subtasks.length} completed
-                </span>
-              )}
-            </div>
-            {editing && <button className="tv-btn" onClick={addSubtask}>＋ Add Subtask</button>}
-          </div>
-
-          {(editing ? editSubtasks : subtasks).length === 0 ? (
-            <div className="tv-val-muted" style={{ textAlign: 'center', padding: '20px 0' }}>No subtasks yet.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>SL</th>
-                  <th style={{ width: '35%' }}>Title & Description</th>
-                  <th>Start Date</th>
-                  <th>End Date</th>
-                  <th>Assigned To</th>
-                  <th>Status</th>
-                  {editing && <th className="tv-action-col">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(editing ? editSubtasks : subtasks).map((s, i) => {
-                  const subAssignees = assigneesFromRow(s)
-                  const taskAssigneeList: string[] = editing ? (editTask?.assignees || []) : taskAssignees
-
-                  return (
-                    <tr key={s.id}>
-                      <td><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>#{i + 1}</span></td>
-                      <td>
-                        {editing ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <input className="tv-input" style={{ padding: '6px 10px' }} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} placeholder="Title..." />
-                            <textarea className="tv-textarea" style={{ padding: '6px 10px', minHeight: 40 }} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Description..." />
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="tv-val">{s.topic}</div>
-                            <span style={{ display: 'block', marginTop: 4, color: 'var(--text-muted)', fontSize: 12 }}>{s.description || '—'}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {editing 
-                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
-                          : s.start_date || '—'
-                        }
-                      </td>
-                      <td>
-                        {editing 
-                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
-                          : s.end_date || '—'
-                        }
-                      </td>
-                      <td>
-                        {editing ? (
-                          <div className="tv-chip-container" style={{ gap: 4 }}>
-                            {taskAssigneeList.length === 0 
-                              ? <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Assign task first</span>
-                              : taskAssigneeList.map(name => {
-                                  const sel = (s.assignees || []).includes(name)
-                                  return (
-                                    <button key={name} type="button" onClick={() => toggleSubAssignee(String(s.id), name)} className={`tv-chip ${sel ? 'selected' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }}>
-                                      {sel ? '✓ ' : ''}{name.split(' ')[0]} {/* Abbreviated name for space */}
-                                    </button>
-                                  )
-                                })
-                            }
-                          </div>
-                        ) : (
-                          subAssignees.length > 0 ? subAssignees.join(', ') : '—'
-                        )}
-                      </td>
-                      <td>
-                        <select 
-                          className={`tv-status-select tv-status-sub ${s.status === 'In Progress' ? 'in-progress' : ''}`}
-                          value={s.status} 
-                          onChange={e => updateSub(String(s.id), 'status', e.target.value)}
-                        >
-                          {STATUSES.map(st => <option key={st}>{st}</option>)}
-                        </select>
-                      </td>
-                      {editing && (
-                        <td className="tv-action-col">
-                          <button className="tv-icon-btn" onClick={() => removeSub(s)}>✕</button>
-                        </td>
-                      )}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-
+    <AppShell title="Task Context">
+      
+      {/* Back Button & Breadcrumb */}
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.back()} className="tv-btn" style={{ padding: '8px' }}>
+          <ArrowLeft size={18} />
+        </button>
+        <span style={{ fontSize: 13, color: 'var(--txt-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+          {task.project_name} / Details
+        </span>
       </div>
+
+      <div className="task-layout">
+        
+        {/* LEFT COLUMN: Main Details */}
+        <div className="main-col">
+          <div className="detail-card">
+            <div className="d-header">
+              <h1 className="d-title">{task.topic}</h1>
+              <StatusPill status={task.status} />
+            </div>
+            
+            <div className="d-section">
+              <h3 className="s-label">Task Description</h3>
+              <div className="d-body">
+                {task.description ? (
+                  <div dangerouslySetInnerHTML={{ __html: task.description }} />
+                ) : (
+                  <span style={{ color: 'var(--txt-muted)' }}>No description provided for this task.</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Metadata & Subtasks */}
+        <div className="side-col">
+          
+          {/* Meta Card */}
+          <div className="meta-card">
+            <h3 className="s-label">Operation Details</h3>
+            
+            <div className="meta-item">
+              <div className="mi-icon"><User size={14} /></div>
+              <div className="mi-content">
+                <span className="mi-lbl">Primary Owner</span>
+                <span className="mi-val">{task.owner || 'Unassigned'}</span>
+              </div>
+            </div>
+
+            <div className="meta-item">
+              <div className="mi-icon"><Layers size={14} /></div>
+              <div className="mi-content">
+                <span className="mi-lbl">Project Context</span>
+                <span className="mi-val" style={{ color: 'var(--accent)' }}>{task.project_name}</span>
+              </div>
+            </div>
+
+            <div className="meta-row">
+              <div className="meta-item inline">
+                <div className="mi-icon"><Calendar size={14} /></div>
+                <div className="mi-content">
+                  <span className="mi-lbl">Start</span>
+                  <span className="mi-val">{task.start_date || '--'}</span>
+                </div>
+              </div>
+              <div className="meta-item inline">
+                <div className="mi-icon"><Calendar size={14} /></div>
+                <div className="mi-content">
+                  <span className="mi-lbl">Deadline</span>
+                  <span className="mi-val">{task.end_date || '--'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Subtasks Card */}
+          <div className="meta-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 className="s-label" style={{ margin: 0 }}>Subtasks</h3>
+              <span className="st-progress">{subProgress}%</span>
+            </div>
+            
+            <div className="subtask-list">
+              {subtasks.map(s => (
+                <div key={s.id} className="subtask-item">
+                  <CheckCircle2 size={16} color={s.status === 'Completed' ? 'var(--sl-light)' : 'var(--txt-label)'} />
+                  <span style={{ textDecoration: s.status === 'Completed' ? 'line-through' : 'none', color: s.status === 'Completed' ? 'var(--txt-muted)' : 'var(--txt-main)' }}>
+                    {s.title}
+                  </span>
+                </div>
+              ))}
+              {subtasks.length === 0 && <div className="empty-sub">No subtasks found.</div>}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <style jsx>{`
+        .task-layout {
+          display: flex;
+          gap: 24px;
+          align-items: flex-start;
+        }
+
+        .main-col { flex: 2; }
+        .side-col { flex: 1; display: flex; flex-direction: column; gap: 24px; }
+
+        .detail-card {
+          background: var(--card-bg);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 32px;
+        }
+
+        .d-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 32px;
+          padding-bottom: 24px;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .d-title { font-size: 24px; font-weight: 800; color: var(--txt-main); margin: 0; max-width: 80%; line-height: 1.3; }
+        
+        .s-label { font-size: 11px; font-weight: 800; color: var(--txt-label); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+        
+        .d-body { font-size: 14px; color: var(--txt-muted); line-height: 1.7; }
+        
+        /* Side Cards */
+        .meta-card {
+          background: var(--card-bg);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 24px;
+        }
+
+        .meta-item { display: flex; gap: 12px; margin-bottom: 20px; }
+        .meta-item:last-child { margin-bottom: 0; }
+        .meta-row { display: flex; gap: 16px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+        .meta-item.inline { margin-bottom: 0; flex: 1; }
+
+        .mi-icon { width: 32px; height: 32px; background: var(--util-bg); border: 1px solid var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--txt-muted); flex-shrink: 0; }
+        .mi-content { display: flex; flex-direction: column; justify-content: center; }
+        .mi-lbl { font-size: 10px; font-weight: 700; color: var(--txt-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+        .mi-val { font-size: 13px; font-weight: 700; color: var(--txt-main); }
+
+        .st-progress { background: var(--nav-active); color: var(--accent); padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: 800; }
+        
+        .subtask-list { display: flex; flex-direction: column; gap: 12px; }
+        .subtask-item { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; font-weight: 600; padding: 12px; background: var(--util-bg); border-radius: 8px; border: 1px solid var(--border); }
+        .empty-sub { font-size: 12px; color: var(--txt-muted); font-style: italic; text-align: center; padding: 12px; }
+      `}</style>
     </AppShell>
   )
 }
