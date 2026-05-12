@@ -102,7 +102,7 @@ export default function AllTasks() {
           background: var(--card-bg);
           border: 1px solid var(--border);
           padding: 10px 16px;
-          border-radius: 10px;
+          border-radius: 8px; /* Sharper edge */
           width: 350px;
         }
 
@@ -132,7 +132,7 @@ export default function AllTasks() {
         .table-container {
           background: var(--card-bg);
           border: 1px solid var(--border);
-          border-radius: 12px;
+          border-radius: 12px; /* Standard 12px edge */
           overflow: hidden;
         }
 
@@ -143,7 +143,7 @@ export default function AllTasks() {
         }
 
         .executive-table th {
-          background: var(--footer-bg);
+          background: var(--util-bg); /* Use util-bg to cleanly separate header from rows */
           padding: 14px 20px;
           font-size: 10px;
           font-weight: 800;
@@ -157,7 +157,7 @@ export default function AllTasks() {
           padding: 16px 20px;
           font-size: 13px;
           border-bottom: 1px solid var(--border);
-          transition: background 0.2s;
+          transition: background 0.2s; /* Flat transition, no bounce */
         }
 
         .executive-table tr {
@@ -191,7 +191,7 @@ export default function AllTasks() {
           height: 24px;
           background: var(--util-bg);
           border: 1px solid var(--border);
-          border-radius: 6px;
+          border-radius: 6px; /* Sharper inner element */
           display: flex;
           align-items: center;
           justify-content: center;
