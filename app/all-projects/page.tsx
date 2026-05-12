@@ -5,7 +5,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { StatusPill, StatusDot } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, LayoutList, Columns, Info, X, Calendar, Clock, Search, Plus, ChevronsUpDown, Users, Edit3, Save } from 'lucide-react'
+import { ChevronRight, LayoutList, Columns, Info, X, Calendar, Clock, Search, Plus, ChevronsUpDown, Users, Edit3, Save, Filter } from 'lucide-react'
 import Link from 'next/link'
 
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
@@ -21,7 +21,6 @@ function ini(name: string) {
 function ProjectInfoModal({ proj, tasks, allUsers, canEdit, onClose, onRefresh }: any) {
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  
   const [editName, setEditName] = useState(proj.name)
   const [editDesc, setEditDesc] = useState(proj.description || '')
   const [editColor, setEditColor] = useState(proj.color_code || '#378ADD')
@@ -30,9 +29,7 @@ function ProjectInfoModal({ proj, tasks, allUsers, canEdit, onClose, onRefresh }
   const projTasks = useMemo(() => tasks.filter((t: any) => t.project_name === proj.name), [tasks, proj.name])
   const done = projTasks.filter((t: any) => t.status === 'Completed').length
   const pct = projTasks.length ? Math.round((done / projTasks.length) * 100) : 0
-  
   const members = (proj.members || []).map((id: string) => allUsers.find((u: any) => u.id === id)).filter(Boolean)
-
   const startDate = projTasks.map((t: any) => t.start_date).filter(Boolean).sort()[0] || '—'
   const endDate = projTasks.map((t: any) => t.end_date).filter(Boolean).sort().reverse()[0] || '—'
   
@@ -44,73 +41,66 @@ function ProjectInfoModal({ proj, tasks, allUsers, canEdit, onClose, onRefresh }
 
   const handleSave = async () => {
     setSaving(true)
-    const { error } = await supabase.from('Projects').update({
-      name: editName.trim(),
-      description: editDesc.trim(),
-      color_code: editColor,
-      members: editMembers,
-    }).eq('id', proj.id)
-
-    if (!error && editName !== proj.name) {
-      await supabase.from('Tasks').update({ project_name: editName.trim() }).eq('project_name', proj.name)
-    }
-    setSaving(false); setIsEditing(false); onRefresh();
+    await supabase.from('Projects').update({ name: editName.trim(), description: editDesc.trim(), color_code: editColor, members: editMembers }).eq('id', proj.id)
+    if (editName !== proj.name) await supabase.from('Tasks').update({ project_name: editName.trim() }).eq('project_name', proj.name)
+    setSaving(false); setIsEditing(false); onRefresh()
   }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background: 'var(--bg)', borderRadius: '12px', width: 480, maxHeight: '85vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.3)', border: '1px solid var(--brd)' }}>
-        <div style={{ background: isEditing ? editColor : (proj.color_code || '#378ADD'), padding: '16px 20px 12px', position: 'relative', color: '#fff', transition: 'background 0.3s' }}>
-          <button onClick={onClose} style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: 24, height: 24, color: '#fff', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><X size={12} /></button>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>{isEditing ? 'Editing Project' : proj.name}</div>
-          {!isEditing && <div style={{ fontSize: 12, opacity: 0.8 }}>{projTasks.length} task{projTasks.length !== 1 ? 's' : ''} · {pct}% complete</div>}
+        <div style={{ background: isEditing ? editColor : (proj.color_code || '#378ADD'), padding: '16px 20px 12px', position: 'relative', color: '#fff' }}>
+          <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 6 }}>
+            {/* SMALL SUBTLE MODIFY BUTTON */}
+            {canEdit && !isEditing && (
+              <button onClick={() => setIsEditing(true)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '4px', width: 24, height: 24, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Modify Project">
+                <Edit3 size={12} />
+              </button>
+            )}
+            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: 24, height: 24, color: '#fff', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><X size={12} /></button>
+          </div>
+          
+          <div style={{ fontSize: 16, fontWeight: 600 }}>{isEditing ? 'Edit Project' : proj.name}</div>
+          {!isEditing && <div style={{ fontSize: 12, opacity: 0.8 }}>{projTasks.length} tasks · {pct}% complete</div>}
           {!isEditing && <div style={{ height: 4, background: 'rgba(255,255,255,0.3)', borderRadius: 2, marginTop: 10, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: '#fff' }} /></div>}
         </div>
 
         <div style={{ padding: '16px 20px' }}>
           {isEditing ? (
             <div style={{ display:'flex', flexDirection:'column', gap: 12 }}>
-               <div>
-                 <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--txt3)', textTransform: 'uppercase', marginBottom: 4, display:'block' }}>Project Title</label>
-                 <input style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--brd)', background: 'var(--bg2)', color: 'var(--txt)', fontSize: 13 }} value={editName} onChange={e => setEditName(e.target.value)} />
+               <input style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--brd)', background: 'var(--bg2)', color: 'var(--txt)', fontSize: 13 }} value={editName} onChange={e => setEditName(e.target.value)} placeholder="Project Name" />
+               <textarea style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--brd)', background: 'var(--bg2)', color: 'var(--txt)', fontSize: 13, minHeight: 60 }} value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Description" />
+               <div style={{ display:'flex', justifyContent:'flex-end', gap: 8 }}>
+                 <button className="tv-btn" onClick={() => setIsEditing(false)}>Cancel</button>
+                 <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
                </div>
-               <div>
-                 <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--txt3)', textTransform: 'uppercase', marginBottom: 4, display:'block' }}>Description</label>
-                 <textarea style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--brd)', background: 'var(--bg2)', color: 'var(--txt)', fontSize: 13, minHeight: 60 }} value={editDesc} onChange={e => setEditDesc(e.target.value)} />
-               </div>
-               <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ marginTop: 8 }}><Save size={14} style={{ marginRight: 6 }}/> {saving ? 'Saving...' : 'Update Details'}</button>
             </div>
           ) : (
             <>
-              {proj.description && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 6 }}>Description</div><div style={{ fontSize: 12, color: 'var(--txt2)', lineHeight: 1.5 }}>{proj.description}</div></div>}
+              {proj.description && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 4 }}>Description</div><div style={{ fontSize: 12, color: 'var(--txt2)', lineHeight: 1.5 }}>{proj.description}</div></div>}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
-                {[ { icon: <Calendar size={12} />, label: 'Start Date', val: startDate }, { icon: <Calendar size={12} />, label: 'End Date', val: endDate }, { icon: <Clock size={12} />, label: 'Duration', val: duration } ].map(s => (
-                  <div key={s.label} style={{ background: 'var(--bg2)', borderRadius: 'var(--r)', padding: '8px 10px' }}><div style={{ display:'flex', alignItems:'center', gap:4, color:'var(--txt3)', fontSize:10, marginBottom:4, fontWeight:700 }}>{s.icon}{s.label}</div><div style={{ fontSize:12, fontWeight:600 }}>{s.val}</div></div>
+                {[ { label: 'Start Date', val: startDate }, { label: 'End Date', val: endDate }, { label: 'Duration', val: duration } ].map(s => (
+                  <div key={s.label} style={{ background: 'var(--bg2)', borderRadius: 'var(--r)', padding: '8px 10px' }}><div style={{ color:'var(--txt3)', fontSize:9, marginBottom:2, fontWeight:700, textTransform:'uppercase' }}>{s.label}</div><div style={{ fontSize:12, fontWeight:600 }}>{s.val}</div></div>
                 ))}
               </div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 8 }}>Task Breakdown</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
-                  {[ { l: 'Not Started', b: '#F1EFE8', c: '#5F5E5A' }, { l: 'In Progress', b: '#E6F1FB', c: '#185FA5' }, { l: 'On-Hold', b: '#FAEEDA', c: '#854F0B' }, { l: 'Completed', b: '#EAF3DE', c: '#3B6D11' } ].map(b => (
-                    <div key={b.l} style={{ background: b.b, borderRadius: 'var(--r)', padding: '6px 8px', textAlign: 'center' }}><div style={{ fontSize: 16, fontWeight: 800, color: b.c }}>{projTasks.filter(t => t.status === b.l).length}</div><div style={{ fontSize: 8, color: b.c, fontWeight: 700 }}>{b.l}</div></div>
+                  {STATUSES.map(st => (
+                    <div key={st} style={{ background: 'var(--bg2)', borderRadius: 'var(--r)', padding: '6px 4px', textAlign: 'center' }}><div style={{ fontSize: 15, fontWeight: 800 }}>{projTasks.filter(t => t.status === st).length}</div><div style={{ fontSize: 8, color: 'var(--txt3)', fontWeight: 700 }}>{st.toUpperCase()}</div></div>
                   ))}
                 </div>
               </div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}><Users size={11} /> Team Members ({members.length})</div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 8 }}><Users size={11} style={{ verticalAlign:'middle', marginRight:4 }}/> Team Members ({members.length})</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {members.map((u: any, i: number) => (
                   <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 'var(--r)' }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>{ini(u.full_name || u.email)}</div>
-                    <div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 600 }}>{u.full_name || u.email}</div><div style={{ fontSize: 10, color: 'var(--txt3)' }}>{u.role}</div></div>
-                    <div style={{ fontSize: 10, textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{projTasks.filter(t => (t.assignees || []).includes(u.full_name) || t.owner === u.full_name).length}</div><div>tasks</div></div>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600 }}>{ini(u.full_name || u.email)}</div>
+                    <div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 600 }}>{u.full_name || u.email}</div></div>
+                    <div style={{ fontSize: 10, textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{projTasks.filter(t => (t.owner || '').includes(u.full_name)).length} tasks</div></div>
                   </div>
                 ))}
               </div>
-              {canEdit && (
-                <div style={{ marginTop: 20, display:'flex', justifyContent:'flex-end' }}>
-                  <button className="tv-btn" onClick={() => setIsEditing(true)}><Edit3 size={13} style={{ marginRight: 6 }}/> Modify Project</button>
-                </div>
-              )}
             </>
           )}
         </div>
@@ -129,7 +119,7 @@ export default function AllProjects() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [collTask, setCollTask] = useState<Record<string, boolean>>({})
   const [infoProj, setInfoProj] = useState<any | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [filterId, setFilterId] = useState('all') // DROP-DOWN FILTER STATE
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [myRole, setMyRole] = useState('')
   const [allExpanded, setAllExpanded] = useState(true)
@@ -140,7 +130,7 @@ export default function AllProjects() {
     setMyRole(u?.role || '')
 
     const [p, t, s, us] = await Promise.all([
-      supabase.from('Projects').select('*'),
+      supabase.from('Projects').select('*').order('name'),
       supabase.from('Tasks').select('*').order('end_date'),
       supabase.from('Subtasks').select('*'),
       supabase.from('Users').select('id,full_name,email,role'),
@@ -150,12 +140,11 @@ export default function AllProjects() {
 
   useEffect(() => { loadData() }, [])
 
-  // ── FILTER & SORT ──
+  // ── FILTER LOGIC ──
   const filteredProjects = useMemo(() => {
-    return projects
-      .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [projects, searchTerm])
+    if (filterId === 'all') return projects
+    return projects.filter(p => p.id === filterId)
+  }, [projects, filterId])
 
   const toggleCollapseAll = () => {
     const nextValue = !allExpanded
@@ -171,19 +160,29 @@ export default function AllProjects() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <div style={{ position: 'relative', width: 280 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--txt3)' }} />
-            <input type="text" placeholder="Search by project name..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} 
-              style={{ width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8, border: '1px solid var(--brd)', background: 'var(--bg)', color: 'var(--txt)', fontSize: 13, outline: 'none' }} />
+          
+          {/* PROJECT DROPDOWN FILTER */}
+          <div style={{ position: 'relative', display:'flex', alignItems:'center', gap: 8, background:'var(--bg2)', border:'1px solid var(--brd)', borderRadius:8, padding:'4px 10px' }}>
+            <Filter size={14} color="var(--txt3)" />
+            <select 
+              value={filterId} 
+              onChange={e => setFilterId(e.target.value)}
+              style={{ background:'transparent', border:'none', color:'var(--txt)', fontSize:13, outline:'none', cursor:'pointer', paddingRight:20 }}
+            >
+              <option value="all">All Projects</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
-          <button className="tv-btn" onClick={toggleCollapseAll} title={allExpanded ? "Collapse All" : "Expand All"}>
-            <ChevronsUpDown size={14}/>
+
+          <button className="tv-btn" onClick={toggleCollapseAll}>
+            {allExpanded ? <ChevronsUpDown size={14}/> : <ChevronsUpDown size={14}/>}
           </button>
         </div>
+
         <div style={{ display: 'flex', gap: 6 }}>
            <button className={view === 'list' ? 'btn btn-primary' : 'btn'} onClick={() => setView('list')}><LayoutList size={16} /></button>
            <button className={view === 'kanban' ? 'btn btn-primary' : 'btn'} onClick={() => setView('kanban')}><Columns size={16} /></button>
-           <Link href="/projects/create" className="btn btn-primary" style={{ marginLeft: 8 }}><Plus size={14} style={{ marginRight: 4 }}/> New Project</Link>
+           <Link href="/projects/create" className="btn btn-primary btn-sm" style={{ marginLeft: 8 }}><Plus size={14}/> New Project</Link>
         </div>
       </div>
 
@@ -256,7 +255,7 @@ export default function AllProjects() {
         /* ─── KANBAN VIEW ─── */
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, alignItems: 'start' }}>
           {STATUSES.map(status => {
-            const groupTasks = tasks.filter(t => t.status === status && t.project_name.toLowerCase().includes(searchTerm.toLowerCase()))
+            const groupTasks = tasks.filter(t => t.status === status && (filterId === 'all' || projects.find(p => p.id === filterId)?.name === t.project_name))
             return (
               <div key={status} style={{ background: 'var(--bg2)', borderRadius: 12, padding: 12, minHeight: '70vh' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '0 4px' }}>
