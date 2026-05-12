@@ -1,13 +1,18 @@
 'use client'
+
 export const dynamic = 'force-dynamic'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, use } from 'react' // Added use
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation' // Removed useParams
 import type { Status, Resource } from '@/types'
 
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 const TYPES    = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
+
+interface TaskDetailProps {
+  params: Promise<{ id: string }>
+}
 
 function nextRecurrence(start: string, end: string, type: string) {
   const duration = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 864e5)
@@ -28,9 +33,13 @@ function assigneesFromRow(row: any): string[] {
   return []
 }
 
-export default function TaskDetail() {
+export default function TaskDetail({ params }: TaskDetailProps) {
   const router   = useRouter()
-  const { id }   = useParams<{ id: string }>()
+  
+  // Next.js 16: Unwrap the params promise
+  const resolvedParams = use(params)
+  const id = resolvedParams.id
+
   const [task,         setTask]         = useState<any>(null)
   const [subtasks,     setSubtasks]     = useState<any[]>([])
   const [projectTeam,  setProjectTeam]  = useState<any[]>([])
@@ -38,7 +47,7 @@ export default function TaskDetail() {
   const [editing,      setEditing]      = useState(false)
   const [saving,       setSaving]       = useState(false)
   const [cloning,      setCloning]      = useState(false)
-  const [deleting,     setDeleting]     = useState(false)
+  const [deleting,      setDeleting]     = useState(false)
   const [error,        setError]        = useState('')
   const [success,      setSuccess]      = useState('')
   const [loading,      setLoading]      = useState(true)
@@ -64,7 +73,6 @@ export default function TaskDetail() {
     setSubtasks(s || [])
     setResources(Array.isArray(t.resources) ? t.resources : [])
 
-    // Load project team
     if (t.project_name) {
       const { data: proj } = await supabase.from('Projects').select('members').eq('name', t.project_name).single()
       if (proj?.members?.length) {
@@ -107,7 +115,6 @@ export default function TaskDetail() {
     setTask(updated)
     await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
 
-    // auto-create next recurrence
     if (newStatus === 'Completed' && task.type !== 'One-time') {
       const { start, end } = nextRecurrence(task.start_date, task.end_date, task.type)
       const { data: newTask } = await supabase.from('Tasks').insert({
@@ -273,9 +280,7 @@ export default function TaskDetail() {
 
   return (
     <AppShell title={task.topic || 'Task Detail'}>
-      {/* ── INJECTED CSS FOR AUTO LIGHT/DARK MODE (RESPECTS APP TOGGLE) ── */}
       <style dangerouslySetInnerHTML={{ __html: `
-        /* LIGHT MODE VARIABLES (DEFAULT) */
         .tv-wrapper {
           --bg-color: transparent;
           --card-bg: #ffffff;
@@ -297,10 +302,7 @@ export default function TaskDetail() {
           --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%232563eb%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
           --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%234b5563%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
         }
-        
-        /* DARK MODE VARIABLES (TRIGGERED BY GLOBAL .dark CLASS OR DATA-THEME) */
-        .dark .tv-wrapper, 
-        [data-theme="dark"] .tv-wrapper {
+        .dark .tv-wrapper, [data-theme="dark"] .tv-wrapper {
           --bg-color: transparent;
           --card-bg: #1e1e1e;
           --subtask-bg: #181818;
@@ -318,57 +320,31 @@ export default function TaskDetail() {
           --btn-delete-txt: #ef4444;
           --btn-delete-hover: rgba(239, 68, 68, 0.2);
           --shadow-sm: none;
-          --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2360a5fa%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-          --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a3a3a3%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
         }
-        
-        /* SHARED STYLES */
         .tv-wrapper { color: var(--text-main); font-size: 14px; display: flex; flex-direction: column; gap: 20px; }
         .tv-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 12px; }
         .tv-back-nav { color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 8px; cursor: pointer; background: none; border: none; font-size: 14px; }
-        .tv-back-nav:hover { color: var(--text-main); }
         .tv-actions { display: flex; gap: 10px; align-items: center; }
-        
         .tv-btn { background-color: var(--btn-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm); transition: 0.2s; }
         .tv-btn:hover { background-color: var(--btn-hover); }
         .tv-btn-primary { background-color: var(--text-main); color: var(--card-bg); }
-        .tv-btn-primary:hover { opacity: 0.9; }
-        .tv-btn-danger { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); border-color: transparent; box-shadow: none; }
-        .tv-btn-danger:hover { background-color: var(--btn-delete-hover); }
-        .tv-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        .tv-status-select { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); border: 1px solid transparent; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; outline: none; appearance: none; padding-right: 24px; background-image: var(--arrow-blue); background-repeat: no-repeat; background-position: right 10px top 50%; background-size: 8px auto; }
-        .tv-status-sub { background-color: var(--pill-gray-bg); color: var(--pill-gray-txt); background-image: var(--arrow-gray); padding: 4px 10px; padding-right: 20px; font-size: 11px; }
-        .tv-status-sub.in-progress { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); background-image: var(--arrow-blue); }
-        
+        .tv-btn-danger { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); border-color: transparent; }
+        .tv-status-select { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); border: 1px solid transparent; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; appearance: none; padding-right: 24px; background-image: var(--arrow-blue); background-repeat: no-repeat; background-position: right 10px top 50%; background-size: 8px auto; }
         .tv-card { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; box-shadow: var(--shadow-sm); }
-        .tv-section-title { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; }
-        
+        .tv-section-title { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
         .tv-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
-        .tv-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 16px; }
+        .tv-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
         .tv-field { display: flex; flex-direction: column; gap: 6px; }
         .tv-label { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; letter-spacing: 0.05em; }
         .tv-val { font-size: 14px; color: var(--text-main); }
-        .tv-val-muted { font-size: 14px; color: var(--text-muted); }
-        
-        .tv-input { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; }
-        .tv-textarea { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; min-height: 80px; resize: vertical; }
-        
+        .tv-input { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; }
+        .tv-textarea { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); min-height: 80px; }
         .tv-table { width: 100%; border-collapse: collapse; text-align: left; }
-        .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
-        .tv-table td { font-size: 13px; color: var(--text-main); padding: 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
-        .tv-table tr:last-child td { border-bottom: none; }
-        .tv-link { color: var(--pill-blue-txt); text-decoration: none; }
-        .tv-link:hover { text-decoration: underline; }
-        
-        .tv-action-col { width: 80px; text-align: right; }
-        .tv-icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; margin-left: 8px; transition: 0.2s; }
-        .tv-icon-btn:hover { color: var(--btn-delete-txt); }
-
+        .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--text-label); padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
+        .tv-table td { font-size: 13px; padding: 12px; border-bottom: 1px solid var(--border-color); }
         .tv-chip-container { display: flex; gap: 8px; flex-wrap: wrap; }
-        .tv-chip { background: var(--btn-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 4px 10px; font-size: 12px; color: var(--text-main); cursor: pointer; transition: 0.2s;}
-        .tv-chip.selected { background-color: var(--text-main); color: var(--card-bg); border-color: var(--text-main); }
-        
+        .tv-chip { background: var(--btn-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 4px 10px; font-size: 12px; }
+        .tv-chip.selected { background-color: var(--text-main); color: var(--card-bg); }
         .tv-alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
         .tv-alert-error { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); }
         .tv-alert-success { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; }
@@ -376,8 +352,6 @@ export default function TaskDetail() {
       `}} />
 
       <div className="tv-wrapper">
-        
-        {/* ── TOP ACTION BAR ── */}
         <div className="tv-top-bar">
           <button className="tv-back-nav" onClick={() => router.back()}>
             <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"></path></svg>
@@ -393,35 +367,29 @@ export default function TaskDetail() {
               {STATUSES.map(s => <option key={s}>{s}</option>)}
             </select>
 
-            <button className="tv-btn" onClick={handleClone} disabled={cloning}>
-              {cloning ? 'Cloning...' : 'Clone'}
-            </button>
+            <button className="tv-btn" onClick={handleClone} disabled={cloning}>Clone</button>
 
             {!editing ? (
               <button className="tv-btn" onClick={startEdit}>✎ Edit</button>
             ) : (
               <>
-                <button className="tv-btn tv-btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : '💾 Save'}</button>
+                <button className="tv-btn tv-btn-primary" onClick={handleSave} disabled={saving}>💾 Save</button>
                 <button className="tv-btn" onClick={cancelEdit}>Cancel</button>
               </>
             )}
 
             {canManage && !editing && (
-              <button className="tv-btn tv-btn-danger" onClick={handleDelete} disabled={deleting}>
-                {deleting ? '...' : '🗑 Delete'}
-              </button>
+              <button className="tv-btn tv-btn-danger" onClick={handleDelete} disabled={deleting}>🗑 Delete</button>
             )}
           </div>
         </div>
 
         {error   && <div className="tv-alert tv-alert-error">{error}</div>}
         {success && <div className="tv-alert tv-alert-success">{success}</div>}
-        {isRecurring && <div className="tv-alert tv-alert-info">🔄 <strong>{task.type} recurring task</strong> — When marked Completed, the next instance is auto-created.</div>}
+        {isRecurring && <div className="tv-alert tv-alert-info">🔄 <strong>{task.type} recurring task</strong></div>}
 
-        {/* ── 1. TASK DETAILS ── */}
         <div className="tv-card">
           <div className="tv-section-title">Task Details</div>
-          
           <div className="tv-grid-2">
             <div className="tv-field">
               <span className="tv-label">Task Title</span>
@@ -440,11 +408,11 @@ export default function TaskDetail() {
             <span className="tv-label">Description</span>
             {editing
               ? <textarea className="tv-textarea" value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
-              : <span className="tv-val-muted">{task.description || 'No description.'}</span>
+              : <span className="tv-val">{task.description || 'No description.'}</span>
             }
           </div>
 
-          <div className="tv-grid-4" style={{ marginBottom: 0 }}>
+          <div className="tv-grid-4">
             <div className="tv-field">
               <span className="tv-label">Start Date</span>
               {editing
@@ -460,7 +428,7 @@ export default function TaskDetail() {
               }
             </div>
             <div className="tv-field">
-              <span className="tv-label">Type of Task</span>
+              <span className="tv-label">Type</span>
               {editing
                 ? <select className="tv-input" value={editTask.type || 'One-time'} onChange={e => setEditTask((p: any) => ({ ...p, type: e.target.value }))}>{TYPES.map(t => <option key={t}>{t}</option>)}</select>
                 : <span className="tv-val">{task.type}</span>
@@ -469,7 +437,6 @@ export default function TaskDetail() {
           </div>
         </div>
 
-        {/* ── 2. ASSIGNED TO ── */}
         <div className="tv-card">
           <div className="tv-section-title">Assigned To</div>
           <div className="tv-chip-container">
@@ -478,168 +445,62 @@ export default function TaskDetail() {
                 const sel = editAssignees.includes(u.full_name)
                 return (
                   <button key={u.id} type="button" onClick={() => toggleAssignee(u.full_name)} className={`tv-chip ${sel ? 'selected' : ''}`}>
-                    {sel ? '✓ ' : ''}{u.full_name}
+                    {u.full_name}
                   </button>
                 )
               })
             ) : (
-              taskAssignees.length > 0 
-                ? taskAssignees.map(a => <div key={a} className="tv-chip">{a}</div>)
-                : <span className="tv-val-muted">Unassigned</span>
+              taskAssignees.map(a => <div key={a} className="tv-chip">{a}</div>)
             )}
           </div>
         </div>
 
-        {/* ── 3. RESOURCES ── */}
         <div className="tv-card">
           <div className="tv-section-title">
             Resources
             {editing && <button className="tv-btn" onClick={addResource}>＋ Add</button>}
           </div>
-          
-          {resources.length === 0 ? (
-            <div className="tv-val-muted" style={{ textAlign: 'center', padding: '20px 0' }}>No resources attached.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 50 }}>SL</th>
-                  <th>Description</th>
-                  <th>Link</th>
-                  {editing && <th className="tv-action-col">Actions</th>}
+          <table className="tv-table">
+            <thead>
+              <tr><th style={{ width: 50 }}>SL</th><th>Description</th><th>Link</th></tr>
+            </thead>
+            <tbody>
+              {resources.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.sl}</td>
+                  <td>{editing ? <input className="tv-input" value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} /> : r.title}</td>
+                  <td>{editing ? <input className="tv-input" value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} /> : <a href={r.link} className="tv-link">{r.link}</a>}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {resources.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.sl}</td>
-                    <td>
-                      {editing 
-                        ? <input className="tv-input" style={{ padding: '6px 10px' }} value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} /> 
-                        : r.title
-                      }
-                    </td>
-                    <td>
-                      {editing 
-                        ? <input className="tv-input" style={{ padding: '6px 10px' }} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://..." /> 
-                        : (r.link ? <a href={r.link} target="_blank" rel="noopener noreferrer" className="tv-link">{r.link}</a> : '—')
-                      }
-                    </td>
-                    {editing && (
-                      <td className="tv-action-col">
-                        <button className="tv-icon-btn" onClick={() => removeResource(i)}>✕</button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        {/* ── 4. SUBTASKS ── */}
         <div className="tv-card">
           <div className="tv-section-title">
-            <div>
-              Subtasks
-              {subtasks.length > 0 && (
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 12, fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>
-                  {subtasks.filter((s: any) => s.status === 'Completed').length} / {subtasks.length} completed
-                </span>
-              )}
-            </div>
+            Subtasks
             {editing && <button className="tv-btn" onClick={addSubtask}>＋ Add Subtask</button>}
           </div>
-
-          {(editing ? editSubtasks : subtasks).length === 0 ? (
-            <div className="tv-val-muted" style={{ textAlign: 'center', padding: '20px 0' }}>No subtasks yet.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>SL</th>
-                  <th style={{ width: '35%' }}>Title & Description</th>
-                  <th>Start Date</th>
-                  <th>End Date</th>
-                  <th>Assigned To</th>
-                  <th>Status</th>
-                  {editing && <th className="tv-action-col">Actions</th>}
+          <table className="tv-table">
+            <thead>
+              <tr><th>Title</th><th>Start</th><th>End</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {(editing ? editSubtasks : subtasks).map((s, i) => (
+                <tr key={s.id}>
+                  <td>{editing ? <input className="tv-input" value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} /> : s.topic}</td>
+                  <td>{editing ? <input type="date" className="tv-input" value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} /> : s.start_date}</td>
+                  <td>{editing ? <input type="date" className="tv-input" value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} /> : s.end_date}</td>
+                  <td>
+                    <select className="tv-status-select" value={s.status} onChange={e => updateSub(String(s.id), 'status', e.target.value)}>
+                      {STATUSES.map(st => <option key={st}>{st}</option>)}
+                    </select>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {(editing ? editSubtasks : subtasks).map((s, i) => {
-                  const subAssignees = assigneesFromRow(s)
-                  const taskAssigneeList: string[] = editing ? (editTask?.assignees || []) : taskAssignees
-
-                  return (
-                    <tr key={s.id}>
-                      <td><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>#{i + 1}</span></td>
-                      <td>
-                        {editing ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <input className="tv-input" style={{ padding: '6px 10px' }} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} placeholder="Title..." />
-                            <textarea className="tv-textarea" style={{ padding: '6px 10px', minHeight: 40 }} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Description..." />
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="tv-val">{s.topic}</div>
-                            <span style={{ display: 'block', marginTop: 4, color: 'var(--text-muted)', fontSize: 12 }}>{s.description || '—'}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {editing 
-                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
-                          : s.start_date || '—'
-                        }
-                      </td>
-                      <td>
-                        {editing 
-                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
-                          : s.end_date || '—'
-                        }
-                      </td>
-                      <td>
-                        {editing ? (
-                          <div className="tv-chip-container" style={{ gap: 4 }}>
-                            {taskAssigneeList.length === 0 
-                              ? <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Assign task first</span>
-                              : taskAssigneeList.map(name => {
-                                  const sel = (s.assignees || []).includes(name)
-                                  return (
-                                    <button key={name} type="button" onClick={() => toggleSubAssignee(String(s.id), name)} className={`tv-chip ${sel ? 'selected' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }}>
-                                      {sel ? '✓ ' : ''}{name.split(' ')[0]} {/* Abbreviated name for space */}
-                                    </button>
-                                  )
-                                })
-                            }
-                          </div>
-                        ) : (
-                          subAssignees.length > 0 ? subAssignees.join(', ') : '—'
-                        )}
-                      </td>
-                      <td>
-                        <select 
-                          className={`tv-status-select tv-status-sub ${s.status === 'In Progress' ? 'in-progress' : ''}`}
-                          value={s.status} 
-                          onChange={e => updateSub(String(s.id), 'status', e.target.value)}
-                        >
-                          {STATUSES.map(st => <option key={st}>{st}</option>)}
-                        </select>
-                      </td>
-                      {editing && (
-                        <td className="tv-action-col">
-                          <button className="tv-icon-btn" onClick={() => removeSub(s)}>✕</button>
-                        </td>
-                      )}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
+              ))}
+            </tbody>
+          </table>
         </div>
-
       </div>
     </AppShell>
   )
