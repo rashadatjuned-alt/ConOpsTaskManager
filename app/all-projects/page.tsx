@@ -17,11 +17,17 @@ function ini(name: string) {
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
 }
 
-// ─── PROJECT INFO MODAL (Screenshot Matched) ───────────────────────────────
+// ─── PROJECT INFO MODAL (Fixed 'members' reference) ────────────────────────
 function ProjectInfoModal({ proj, tasks, allUsers, onClose }: any) {
   const projTasks = tasks.filter((t: any) => t.project_name === proj.name)
   const done = projTasks.filter((t: any) => t.status === 'Completed').length
   const pct = projTasks.length ? Math.round((done / projTasks.length) * 100) : 0
+  
+  // FIX: Added the missing members calculation
+  const members = (proj.members || [])
+    .map((id: string) => allUsers.find((u: any) => u.id === id))
+    .filter(Boolean)
+
   const startDate = projTasks.map((t: any) => t.start_date).filter(Boolean).sort()[0] || '—'
   const endDate = projTasks.map((t: any) => t.end_date).filter(Boolean).sort().reverse()[0] || '—'
   
@@ -62,7 +68,7 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose }: any) {
                 <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 'var(--r)' }}>
                   <div style={{ width: 28, height: 28, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>{ini(u.full_name || u.email)}</div>
                   <div style={{ flex: 1 }}><div style={{ fontSize: 12, fontWeight: 600 }}>{u.full_name || u.email}</div><div style={{ fontSize: 10, color: 'var(--txt3)' }}>{u.role}</div></div>
-                  <div style={{ fontSize: 10, textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{projTasks.filter(t => (t.assignees || []).includes(u.full_name) || t.owner === u.full_name).length}</div><div>tasks</div></div>
+                  <div style={{ fontSize: 10, textAlign: 'right' }}><div style={{ fontWeight: 700 }}>{projTasks.filter(t => (t.owner || '').includes(u.full_name)).length}</div><div>tasks</div></div>
                 </div>
               ))}
             </div>
@@ -109,7 +115,6 @@ export default function AllProjects() {
     <AppShell title="All Projects Portfolio">
       {infoProj && <ProjectInfoModal proj={infoProj} tasks={tasks} allUsers={allUsers} onClose={() => setInfoProj(null)} />}
 
-      {/* Header Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <div style={{ position: 'relative', width: 280 }}>
@@ -126,7 +131,6 @@ export default function AllProjects() {
       </div>
 
       {view === 'list' ? (
-        /* ─── LIST VIEW ─── */
         sortedProjects.map(proj => {
           const ptasks = tasks.filter(t => t.project_name === proj.name)
           const pct = ptasks.length ? Math.round((ptasks.filter(t => t.status === 'Completed').length / ptasks.length) * 100) : 0
@@ -167,7 +171,7 @@ export default function AllProjects() {
                               <span style={{ fontSize: 10, width: 25, color: 'var(--txt3)' }}>{tPct}%</span>
                             </div>
                             <div style={{ width: 95 }}><StatusPill status={t.status} /></div>
-                            <div style={{ width: 60, textAlign: 'right' }}><button className="tv-btn" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => router.push(`/tasks/${t.id}`)}>Edit</button></div>
+                            <div style={{ width: 60, textAlign: 'right' }}><button className="tv-btn" style={{ fontSize: 10, padding: '2px 6px' }} onClick={() => router.push(`/tasks/${t.id}`)}>Edit</button></div>
                           </div>
                         </div>
                         {tSubs.length > 0 && isTaskOpen && (
@@ -224,7 +228,6 @@ export default function AllProjects() {
                       </div>
                     )
                   })}
-                  {groupTasks.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: 'var(--txt3)', fontSize: 12, border: '1px dashed var(--brd)', borderRadius: 8 }}>No tasks</div>}
                 </div>
               </div>
             )
