@@ -20,9 +20,13 @@ export default function AppShell({ children, title }: { children: React.ReactNod
   const pathname = usePathname()
   const [me, setMe] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [isDark, setIsDark] = useState(true)
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
 
   useEffect(() => {
+    // Load saved theme
+    const savedTheme = localStorage.getItem('app-theme') as 'dark' | 'light'
+    if (savedTheme) setTheme(savedTheme)
+
     const getProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/auth'); return }
@@ -33,6 +37,12 @@ export default function AppShell({ children, title }: { children: React.ReactNod
     getProfile()
   }, [router])
 
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+    localStorage.setItem('app-theme', newTheme)
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/auth')
@@ -41,12 +51,12 @@ export default function AppShell({ children, title }: { children: React.ReactNod
   const isManagerial = me?.role === 'Manager' || me?.role === 'Admin'
   const isActive = (path: string) => pathname === path
 
-  if (loading) return <div style={{ background: '#000', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333' }}>Loading Secure Session...</div>
+  if (loading) return <div style={{ background: 'var(--bg)', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--txt-muted)' }}>Loading Secure Session...</div>
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#050505' }}>
+    <div className="app-wrapper" data-theme={theme} style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
       
-      {/* ─── SIDEBAR ─── */}
+      {/* ─── EXACT LAYOUT SIDEBAR ─── */}
       <aside className="executive-sidebar">
         
         {/* BRANDING */}
@@ -99,8 +109,8 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           </div>
 
           <div className="action-tray">
-            <button onClick={() => setIsDark(!isDark)} className="tray-btn" title="Theme">
-              {isDark ? <Sun size={16} /> : <Moon size={16} />}
+            <button onClick={toggleTheme} className="tray-btn" title="Theme">
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
             <button onClick={() => router.push('/settings/password')} className="tray-btn" title="Security">
               <Lock size={16} />
@@ -126,13 +136,14 @@ export default function AppShell({ children, title }: { children: React.ReactNod
       <style jsx>{`
         .executive-sidebar {
           width: 260px;
-          background: #080808;
-          border-right: 1px solid #1a1a1a;
+          background: var(--sidebar-bg);
+          border-right: 1px solid var(--border);
           display: flex;
           flex-direction: column;
           position: fixed;
           height: 100vh;
           z-index: 100;
+          transition: background 0.3s ease, border-color 0.3s ease;
         }
 
         .brand-section {
@@ -148,7 +159,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .logo-square {
           width: 32px;
           height: 32px;
-          background: linear-gradient(135deg, #378ADD, #1B5299);
+          background: linear-gradient(135deg, var(--accent), var(--accent-dark));
           border-radius: 8px;
           display: flex;
           align-items: center;
@@ -156,19 +167,19 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           color: white;
           font-weight: 900;
           font-size: 16px;
-          box-shadow: 0 4px 10px rgba(55, 138, 221, 0.2);
+          box-shadow: 0 4px 10px var(--accent-glow);
         }
 
         .brand-text {
           font-size: 18px;
           font-weight: 900;
-          color: #fff;
+          color: var(--txt-main);
           letter-spacing: -0.5px;
           white-space: nowrap;
         }
 
         .brand-text span {
-          color: #378ADD;
+          color: var(--accent);
         }
 
         .nav-stack {
@@ -180,7 +191,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           padding: 10px 12px;
           font-size: 10px;
           font-weight: 800;
-          color: #333;
+          color: var(--txt-label);
           text-transform: uppercase;
           letter-spacing: 1.5px;
         }
@@ -190,7 +201,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           align-items: center;
           gap: 12px;
           padding: 12px 16px;
-          color: #666;
+          color: var(--txt-muted);
           text-decoration: none;
           font-size: 14px;
           font-weight: 600;
@@ -200,20 +211,22 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         }
 
         .nav-link-new:hover {
-          color: #fff;
-          background: #111;
+          color: var(--txt-main);
+          background: var(--nav-hover);
         }
 
+        /* REVERTED TO INSET BOX SHADOW FOR ACTIVE STATE */
         .nav-link-new.active {
-          color: #fff;
-          background: #141414;
-          box-shadow: inset 0 0 0 1px #222;
+          color: var(--txt-main);
+          background: var(--nav-active);
+          box-shadow: inset 0 0 0 1px var(--border);
         }
 
         .sidebar-footer {
           padding: 20px;
-          background: #050505;
-          border-top: 1px solid #1a1a1a;
+          background: var(--footer-bg);
+          border-top: 1px solid var(--border);
+          transition: background 0.3s ease;
         }
 
         .user-info {
@@ -228,12 +241,12 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           width: 38px;
           height: 38px;
           border-radius: 10px;
-          background: #111;
-          border: 1px solid #222;
+          background: var(--util-bg);
+          border: 1px solid var(--border);
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #378ADD;
+          color: var(--accent);
           font-weight: 800;
           font-size: 13px;
         }
@@ -247,7 +260,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .name {
           font-size: 13px;
           font-weight: 700;
-          color: #fff;
+          color: var(--txt-main);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -255,7 +268,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
 
         .role {
           font-size: 9px;
-          color: #555;
+          color: var(--txt-muted);
           font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.5px;
@@ -267,9 +280,9 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         }
 
         .tray-btn {
-          background: #111;
-          border: 1px solid #222;
-          color: #444;
+          background: var(--util-bg);
+          border: 1px solid var(--border);
+          color: var(--txt-muted);
           padding: 10px;
           border-radius: 10px;
           cursor: pointer;
@@ -280,9 +293,9 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         }
 
         .tray-btn:hover {
-          background: #1a1a1a;
-          color: #fff;
-          border-color: #333;
+          background: var(--util-hover);
+          color: var(--txt-main);
+          border-color: var(--txt-label);
         }
 
         .logout {
@@ -295,7 +308,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .logout:hover {
           color: #ef4444;
           background: rgba(239, 68, 68, 0.05);
-          border-color: rgba(239, 68, 68, 0.15);
+          border-color: rgba(239, 68, 68, 0.2);
         }
 
         .main-viewport {
@@ -307,7 +320,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .page-header h1 {
           font-size: 26px;
           font-weight: 800;
-          color: #fff;
+          color: var(--txt-main);
           letter-spacing: -0.5px;
           margin-bottom: 32px;
         }
