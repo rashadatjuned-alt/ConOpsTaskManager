@@ -1,11 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "aged-haze-c8fa",
+  "name": "conopstaskmanager",
   "compatibility_date": "2026-05-12",
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  // This tells Cloudflare where to find the final build
+  // This is the CRITICAL line Cloudflare is asking for:
   "pages_build_output_dir": ".open-next",
   "observability": {
     "enabled": true
