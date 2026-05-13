@@ -1,7 +1,7 @@
 'use client'
 
 export const dynamic = 'force-dynamic'
-import { useEffect, useState, use } from 'react' // Added use hook
+import { useEffect, useState, use } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -37,13 +37,13 @@ export default function EditProject({ params }: EditProjectProps) {
   const [name,        setName]        = useState('')
   const [desc,        setDesc]        = useState('')
   const [color,       setColor]       = useState('#3b82f6')
-  const [members,     setMembers]     = useState<string[]>([])   // user ids
+  const [members,     setMembers]     = useState<string[]>([])   // Current selected User IDs
 
   // Impact preview
   const [showImpact,  setShowImpact]  = useState(false)
-  const [removedUsers,setRemovedUsers]= useState<any[]>([])      // users being removed
-  const [impactTasks, setImpactTasks] = useState<any[]>([])      // tasks affected
-  const [impactSubs,  setImpactSubs]  = useState<any[]>([])      // subtasks affected
+  const [removedUsers,setRemovedUsers]= useState<any[]>([])      
+  const [impactTasks, setImpactTasks] = useState<any[]>([])      
+  const [impactSubs,  setImpactSubs]  = useState<any[]>([])      
 
   useEffect(() => {
     const load = async () => {
@@ -53,8 +53,9 @@ export default function EditProject({ params }: EditProjectProps) {
       const { data: u } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
       setMyRole(u?.role || '')
 
+      // FETCHING: Join with project_members table
       const [{ data: proj }, { data: users }, { data: t }, { data: s }] = await Promise.all([
-        supabase.from('Projects').select('*').eq('id', id).single(),
+        supabase.from('Projects').select('*, project_members(user_id)').eq('id', id).single(),
         supabase.from('Users').select('id,full_name,email,role').neq('role', 'Admin').order('full_name'),
         supabase.from('Tasks').select('*'),
         supabase.from('Subtasks').select('*'),
@@ -62,14 +63,17 @@ export default function EditProject({ params }: EditProjectProps) {
 
       if (!proj) { setLoading(false); return }
 
-      setProject(proj)
+      // Extract IDs from the join table result
+      const existingMemberIds = proj.project_members?.map((m: any) => m.user_id) || []
+
+      setProject({ ...proj, members: existingMemberIds }) // original members for impact logic
       setName(proj.name || '')
       setDesc(proj.description || '')
       setColor(proj.color_code || '#3b82f6')
-      setMembers(proj.members || [])
+      setMembers(existingMemberIds)
       setAllUsers(users || [])
 
-      // Only tasks for this project
+      // Tasks and subtasks filtering
       const projTasks = (t || []).filter((tk: any) => tk.project_name === proj.name)
       setTasks(projTasks)
       const projTaskIds = projTasks.map((tk: any) => tk.id)
@@ -120,19 +124,35 @@ export default function EditProject({ params }: EditProjectProps) {
     try {
       const oldName = project.name
 
+      // 1. Update Project basic details
       await supabase.from('Projects').update({
         name: name.trim(),
         description: desc.trim(),
         color_code: color,
-        members,
+        // members column is intentionally omitted here
       }).eq('id', id)
 
+      // 2. Sync Membership in project_members table
+      // Delete old members first
+      await supabase.from('project_members').delete().eq('project_id', id)
+      
+      // Insert current selected members
+      if (members.length > 0) {
+        const insertData = members.map(uid => ({
+          project_id: parseInt(id),
+          user_id: uid
+        }))
+        await supabase.from('project_members').insert(insertData)
+      }
+
+      // Handle Task project name updates if changed
       if (name.trim() !== oldName) {
         await supabase.from('Tasks')
           .update({ project_name: name.trim() })
           .eq('project_name', oldName)
       }
 
+      // Handle automatic unassignment for removed users
       if (removedUsers.length > 0) {
         const removedNames = removedUsers.map((u: any) => u.full_name || u.email)
 

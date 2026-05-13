@@ -7,7 +7,7 @@ import { StatusDot } from '@/components/ui/StatusPill'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronRight, LayoutList, Columns, Info, X, Calendar, 
-  ChevronsUpDown, Plus, Filter, Target, Users, Clock, Edit3, Trash2, AlertTriangle, Check
+  ChevronsUpDown, Plus, Filter, Target, Clock, Edit3, Trash2, AlertTriangle, Check
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -15,18 +15,9 @@ const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
 const AVATAR_CL = ['#0C447C', '#27500A', '#3C3489', '#633806', '#712B13', '#085041']
 
-// Synced EXACTLY with "New Project" Page Color Tags
 const PROJECT_COLORS = [
-  '#3B82F6', // Blue
-  '#8B5CF6', // Purple
-  '#F59E0B', // Orange
-  '#84CC16', // Light Green
-  '#EF4444', // Red
-  '#4D7C0F', // Dark Green
-  '#B45309', // Brown
-  '#0284C7', // Dark Teal/Cyan
-  '#2DD4BF', // Mint/Light Teal
-  '#EC4899'  // Pink
+  '#3B82F6', '#8B5CF6', '#F59E0B', '#84CC16', '#EF4444', 
+  '#4D7C0F', '#B45309', '#0284C7', '#2DD4BF', '#EC4899'
 ]
 
 function ini(name: string) {
@@ -43,7 +34,13 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose, onRefresh }: any) {
   const [editName, setEditName] = useState(proj.name)
   const [editDesc, setEditDesc] = useState(proj.description || '')
   const [editColor, setEditColor] = useState(proj.color_code || PROJECT_COLORS[0])
-  const [editMembers, setEditMembers] = useState<string[]>(proj.members || [])
+  
+  // Initialize from relational data
+  const initialMemberIds = useMemo(() => 
+    proj.project_members?.map((m: any) => m.user_id) || [], 
+  [proj.project_members])
+  
+  const [editMembers, setEditMembers] = useState<string[]>(initialMemberIds)
 
   const projTasks = useMemo(() => tasks.filter((t: any) => t.project_name === proj.name), [tasks, proj.name])
   const done = projTasks.filter((t: any) => t.status === 'Completed').length
@@ -53,14 +50,29 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose, onRefresh }: any) {
 
   const handleSave = async () => {
     setSaving(true)
+    
+    // 1. Update Project basic info
     const { error } = await supabase.from('Projects')
-      .update({ name: editName, description: editDesc, color_code: editColor, members: editMembers })
+      .update({ name: editName, description: editDesc, color_code: editColor })
       .eq('id', proj.id)
-    if (editName !== proj.name) await supabase.from('Tasks').update({ project_name: editName }).eq('project_name', proj.name)
-    setSaving(false); if (!error) { setMode('view'); onRefresh(); }
+    
+    // 2. Sync Members Table (Delete then Insert)
+    await supabase.from('project_members').delete().eq('project_id', proj.id)
+    if (editMembers.length > 0) {
+      const inserts = editMembers.map(uid => ({ project_id: proj.id, user_id: uid }))
+      await supabase.from('project_members').insert(inserts)
+    }
+
+    if (editName !== proj.name) {
+      await supabase.from('Tasks').update({ project_name: editName }).eq('project_name', proj.name)
+    }
+
+    setSaving(false)
+    if (!error) { setMode('view'); onRefresh(); }
   }
 
   const handleDelete = async () => {
+    // cascade delete handles project_members if FK is set to CASCADE
     const { error } = await supabase.from('Projects').delete().eq('id', proj.id)
     if (!error) { onClose(); onRefresh(); }
   }
@@ -69,7 +81,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose, onRefresh }: any) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background: 'var(--bg)', borderRadius: '24px', width: 520, maxHeight: '90vh', overflow: 'hidden', boxShadow: '0 30px 60px -12px rgba(0,0,0,0.4)', border: '1px solid var(--brd)', display: 'flex', flexDirection: 'column' }}>
         
-        {/* Header - Edit Button Top Right */}
         <div style={{ background: mode === 'edit' ? editColor : (proj.color_code || PROJECT_COLORS[0]), padding: '24px', color: '#fff', transition: '0.4s' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ fontSize: 20, fontWeight: 900 }}>{mode === 'edit' ? 'Edit Project' : proj.name}</div>
@@ -95,7 +106,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose, onRefresh }: any) {
               </div>
             </div>
           ) : mode === 'edit' ? (
-            /* ─── EDIT MODE ─── */
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div>
                 <label style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase' }}>Project Name</label>
@@ -129,36 +139,16 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose, onRefresh }: any) {
                 </div>
               </div>
               
-              {/* Premium Action Row */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--brd)', paddingTop: 20, marginTop: 4 }}>
                 <button onClick={() => setDeleteStage(1)} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Trash2 size={16} /> Delete
                 </button>
-                <button 
-                  onClick={handleSave} 
-                  disabled={saving} 
-                  style={{ 
-                    background: editColor, 
-                    color: '#fff', 
-                    border: 'none', 
-                    padding: '12px 28px', 
-                    borderRadius: '12px', 
-                    fontWeight: 800, 
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    boxShadow: `0 6px 16px ${editColor}50`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    transition: 'all 0.2s ease',
-                    opacity: saving ? 0.8 : 1
-                  }}
-                >
+                <button onClick={handleSave} disabled={saving} style={{ background: editColor, color: '#fff', border: 'none', padding: '12px 28px', borderRadius: '12px', fontWeight: 800, cursor: saving ? 'not-allowed' : 'pointer', boxShadow: `0 6px 16px ${editColor}50`, display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s ease', opacity: saving ? 0.8 : 1 }}>
                   {saving ? 'Saving...' : <>Save Changes <ChevronRight size={16} /></>}
                 </button>
               </div>
             </div>
           ) : (
-            /* VIEW MODE STRUCTURE: Description -> Dates/Tasks -> Progress -> Distribution -> Team */
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               <div style={{ fontSize: 13, color:'var(--txt2)', lineHeight: 1.6 }}>{proj.description || 'No description provided.'}</div>
 
@@ -196,12 +186,12 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose, onRefresh }: any) {
               <div>
                 <label style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', marginBottom: 10, display: 'block' }}>Project Members</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(proj.members || []).map((id: string, i: number) => {
-                    const u = allUsers.find((user: any) => user.id === id);
+                  {(proj.project_members || []).map((m: any, i: number) => {
+                    const u = allUsers.find((user: any) => user.id === m.user_id);
                     if (!u) return null;
                     const count = projTasks.filter(t => (t.owner === u.full_name) || (t.assignees || []).includes(u.full_name)).length;
                     return (
-                      <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12 }}>
+                      <div key={m.user_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12 }}>
                         <div style={{ width: 30, height: 30, borderRadius: '8px', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{ini(u.full_name)}</div>
                         <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{u.full_name}</div><div style={{ fontSize: 10, color: 'var(--txt3)' }}>{u.role || 'Member'}</div></div>
                         <div style={{ textAlign: 'right' }}><div style={{ fontSize: 12, fontWeight: 800 }}>{count}</div><div style={{ fontSize: 8, color: 'var(--txt3)' }}>TASKS</div></div>
@@ -218,7 +208,6 @@ function ProjectInfoModal({ proj, tasks, allUsers, onClose, onRefresh }: any) {
   )
 }
 
-// ─── STATUS PICKER ────────────────────────────────────────────────────────
 const StatusPicker = ({ current, onUpdate }: { current: string, onUpdate: (val: string) => void }) => {
   const getColor = (s: string) => {
     if (s === 'Completed') return { bg: 'rgba(99, 153, 34, 0.1)', fg: '#639922' }
@@ -234,7 +223,6 @@ const StatusPicker = ({ current, onUpdate }: { current: string, onUpdate: (val: 
   )
 }
 
-// ─── MAIN PAGE ─────────────────────────────────────────────────────────────
 export default function AllProjects() {
   const router = useRouter()
   const [projects, setProjects] = useState<any[]>([])
@@ -247,8 +235,9 @@ export default function AllProjects() {
   const [infoProj, setInfoProj] = useState<any | null>(null)
 
   const loadData = async () => {
+    // UPDATED SELECT: project_members(user_id)
     const [p, t, us] = await Promise.all([
-      supabase.from('Projects').select('*').order('name'),
+      supabase.from('Projects').select('*, project_members(user_id)').order('name'),
       supabase.from('Tasks').select('*').order('end_date'),
       supabase.from('Users').select('id,full_name,role'),
     ])
@@ -291,25 +280,25 @@ export default function AllProjects() {
           const ptasks = tasks.filter(t => t.project_name === proj.name)
           const pct = ptasks.length ? Math.round((ptasks.filter(t => t.status === 'Completed').length / ptasks.length) * 100) : 0
           const isOpen = allExpanded && !collapsed[proj.id]
-          const projectMembers = (proj.members || []).map((id: string) => allUsers.find(u => u.id === id)).filter(Boolean)
+          
+          // MAPPING: Use project_members
+          const projectMembers = (proj.project_members || [])
+            .map((m: any) => allUsers.find(u => u.id === m.user_id))
+            .filter(Boolean)
 
           return (
             <div key={proj.id} style={{ border: '1px solid var(--brd)', borderRadius: 14, background: 'var(--bg)', overflow: 'hidden', marginBottom: 16, boxShadow: 'var(--shd)' }}>
-              <div 
-                style={{ padding: '10px 16px', background: 'var(--bg2)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} 
-                onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}
-              >
+              <div style={{ padding: '10px 16px', background: 'var(--bg2)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => setCollapsed(c => ({ ...c, [proj.id]: !c[proj.id] }))}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
                   <ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : '', transition: '0.2s', color: 'var(--txt3)' }} />
                   <div style={{ width: 10, height: 10, borderRadius: '50%', background: proj.color_code || PROJECT_COLORS[0] }} />
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{proj.name}</div>
                   
-                  {/* List Avatar Stack */}
                   <div style={{ display: 'flex', alignItems: 'center', marginLeft: 16 }}>
                     {projectMembers.map((u: any, i: number) => {
                       const count = ptasks.filter(t => (t.owner === u.full_name) || (t.assignees || []).includes(u.full_name)).length;
                       return (
-                        <div key={u.id} title={`${u.full_name} • ${count} Tasks`} style={{ width: 24, height: 24, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 900, border: '2px solid var(--bg2)', marginLeft: i > 0 ? '-5px' : '0', zIndex: 10 - i, cursor: 'pointer' }}>
+                        <div key={u.id} title={`${u.full_name} • ${count} Tasks`} style={{ width: 24, height: 24, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 900, border: '2px solid var(--bg2)', marginLeft: i > 0 ? '-5px' : '0', zIndex: 10 - i }}>
                           {ini(u.full_name)}
                         </div>
                       )
@@ -370,14 +359,17 @@ function KanbanBoard({ tasks, projects, allUsers, filterId, onStatusChange }: an
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {colTasks.map((t: any) => {
                 const projectObj = projects.find((p: any) => p.name === t.project_name);
-                const projectMembers = (projectObj?.members || []).map((id: string) => allUsers.find((u: any) => u.id === id)).filter(Boolean);
+                
+                // MAPPING: Use project_members
+                const projectMembers = (projectObj?.project_members || [])
+                  .map((m: any) => allUsers.find((u: any) => u.id === m.user_id))
+                  .filter(Boolean);
 
                 return (
                   <div key={t.id} onClick={() => router.push(`/tasks/${t.id}`)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: '10px', padding: '10px', marginBottom: 8, cursor: 'pointer' }}>
                     <div style={{ fontSize: '9px', color: 'var(--txt3)', fontWeight: 800, textTransform: 'uppercase', marginBottom: '4px' }}>{t.project_name}</div>
                     <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--txt)', marginBottom: 10, lineHeight: 1.3 }}>{t.topic}</div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      {/* Synced Kanban Avatar Stack */}
                       <div style={{ display: 'flex', alignItems: 'center' }}>
                         {projectMembers.slice(0, 3).map((u: any, i: number) => (
                           <div key={u.id} title={u.full_name} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-5px' : '0', zIndex: 10 - i }}>

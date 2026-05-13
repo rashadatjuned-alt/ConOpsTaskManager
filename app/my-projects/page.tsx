@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { StatusDot } from '@/components/ui/StatusPill'
 import { 
-  Folder, Plus, LayoutGrid, Columns, ChevronRight, MoreVertical, Clock, X, Edit3, CheckCircle2
+  Folder, Plus, LayoutGrid, Columns, ChevronRight, MoreVertical, Clock, X, Edit3, CheckCircle2 
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -31,7 +31,6 @@ export default function MyProjects() {
   const [myRole, setMyRole] = useState('user')
   const [view, setView] = useState<'grid' | 'kanban'>('grid')
   
-  // Modal State
   const [selectedProject, setSelectedProject] = useState<any | null>(null)
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({})
 
@@ -40,73 +39,56 @@ export default function MyProjects() {
       setLoading(true)
       
       const { data: authData } = await supabase.auth.getUser()
-      const userEmail = authData.user?.email
+      if (!authData.user) return
 
+      // 1. UPDATED QUERY: Using the project_members join table
       const [p, t, us, st] = await Promise.all([
-        supabase.from('Projects').select('*').order('name'),
+        supabase
+          .from('Projects')
+          .select(`
+            *,
+            project_members!inner (user_id)
+          `)
+          .eq('project_members.user_id', authData.user.id) // Only fetch projects I am in
+          .order('name'),
         supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Users').select('id, full_name, email, role'),
         supabase.from('Subtasks').select('*').order('end_date')
       ])
       
       const fetchedUsers = us.data || []
-      const currentUser = fetchedUsers.find(u => u.email === userEmail)
-      const myName = currentUser?.full_name || ''
-      
-      // Save role for Permissions (Admin/Manager check)
+      const currentUser = fetchedUsers.find(u => u.id === authData.user?.id)
       setMyRole(currentUser?.role || 'user')
 
       const allTasks = t.data || []
       const allSubtasks = st.data || []
       const rawProjects = p.data || []
 
-      const isAssignedToMe = (item: any) => {
-        if (!item || !myName) return false;
-        const ownerStr = String(item.owner || '');
-        const assigneesStr = String(item.assignees || '');
-        const membersStr = String(item.members || ''); 
-        return ownerStr.includes(myName) || assigneesStr.includes(myName) || membersStr.includes(myName);
-      }
-
-      const myEnrichedProjects = rawProjects.reduce((acc, proj) => {
+      // 2. REFACTORED MAPPING: Using relational data
+      const myEnrichedProjects = rawProjects.map((proj) => {
+        // Filter tasks belonging to this project
         const projTasks = allTasks.filter(task => String(task.project_name) === String(proj.name))
         const projTaskIds = projTasks.map(task => task.id)
-        const projSubtasks = allSubtasks.filter(sub => projTaskIds.includes(sub.parent_task_id))
         
-        const explicitlyMine = isAssignedToMe(proj);
-        const hasMyTasks = projTasks.some(isAssignedToMe);
-        const hasMySubtasks = projSubtasks.some(isAssignedToMe);
+        // Calculate Progress
+        const doneTasks = projTasks.filter(task => task.status === 'Completed').length
+        const progressPct = projTasks.length > 0 ? Math.round((doneTasks / projTasks.length) * 100) : 0
 
-        if (explicitlyMine || hasMyTasks || hasMySubtasks) {
-          const doneTasks = projTasks.filter(task => task.status === 'Completed').length
-          const progressPct = projTasks.length > 0 ? Math.round((doneTasks / projTasks.length) * 100) : 0
+        // Determine Active Members using IDs from the join table
+        // We select ALL members for these projects to show the avatars correctly
+        const activeMembers = fetchedUsers.filter(u => 
+          proj.project_members?.some((m: any) => m.user_id === u.id)
+        )
 
-          const memberNames = new Set<string>()
-          const extractNames = (str: any) => {
-             if (!str) return;
-             String(str).split(',').forEach(n => memberNames.add(n.trim()))
-          }
-
-          extractNames(proj.owner)
-          extractNames(proj.members)
-          projTasks.forEach(task => {
-            extractNames(task.owner)
-            extractNames(task.assignees)
-          })
-          
-          const activeMembers = fetchedUsers.filter(u => memberNames.has(u.full_name))
-
-          acc.push({
-            ...proj,
-            taskCount: projTasks.length,
-            doneCount: doneTasks,
-            progress: progressPct,
-            activeMembers,
-            projectColor: proj.color_code || PROJECT_COLORS[acc.length % PROJECT_COLORS.length]
-          })
+        return {
+          ...proj,
+          taskCount: projTasks.length,
+          doneCount: doneTasks,
+          progress: progressPct,
+          activeMembers,
+          projectColor: proj.color_code || PROJECT_COLORS[0]
         }
-        return acc;
-      }, [] as any[])
+      })
 
       setProjects(myEnrichedProjects)
       setTasks(allTasks)
@@ -122,10 +104,8 @@ export default function MyProjects() {
 
   useEffect(() => { loadData() }, [])
 
-  // Access Control Helper
   const canEdit = myRole === 'admin' || myRole === 'manager'
 
-  // Helper for Modal Avatars
   const getTaskMembers = (item: any) => {
     if (!item) return [];
     return allUsers.filter(u => 
@@ -161,7 +141,6 @@ export default function MyProjects() {
         </div>
       ) : (
         <>
-          {/* GRID VIEW */}
           {view === 'grid' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
               {projects.map((proj) => (
@@ -184,7 +163,6 @@ export default function MyProjects() {
                     <button style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><MoreVertical size={16} /></button>
                   </div>
 
-                  {/* Progress Bar */}
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, color: 'var(--txt2)', marginBottom: 8 }}>
                         <span>Progress</span>
@@ -199,7 +177,6 @@ export default function MyProjects() {
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
-                    {/* Avatars */}
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                       {proj.activeMembers.slice(0, 4).map((u: any, i: number) => (
                         <div key={u.id} title={u.full_name} style={{ width: 28, height: 28, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i }}>
@@ -224,7 +201,6 @@ export default function MyProjects() {
             </div>
           )}
 
-          {/* KANBAN VIEW */}
           {view === 'kanban' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {PROJECT_STATUSES.map(status => {
@@ -273,13 +249,10 @@ export default function MyProjects() {
         </>
       )}
 
-      {/* ─── PROJECT MODAL VIEW ─── */}
+      {/* MODAL */}
       {selectedProject && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setSelectedProject(null)}>
-          
           <div style={{ background: 'var(--bg)', width: '100%', maxWidth: 800, maxHeight: '90vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
-            
-            {/* Modal Header */}
             <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--brd)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', background: 'var(--bg2)' }}>
                <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
@@ -289,7 +262,6 @@ export default function MyProjects() {
                   </div>
                   <p style={{ fontSize: 13, color: 'var(--txt3)', margin: 0, maxWidth: 600 }}>{selectedProject.description || 'No project description provided.'}</p>
                </div>
-               
                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                  {canEdit && (
                     <button onClick={() => router.push(`/projects/${selectedProject.id}`)} className="btn" style={{ display: 'flex', alignItems: 'center', gap: 6, borderRadius: 10 }}>
@@ -302,10 +274,7 @@ export default function MyProjects() {
                </div>
             </div>
 
-            {/* Modal Body (Scrollable) */}
             <div style={{ padding: 32, overflowY: 'auto', flex: 1 }}>
-               
-               {/* Quick Stats Grid */}
                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
                   <div style={{ border: '1px solid var(--brd)', padding: 16, borderRadius: 14 }}>
                      <div style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 600, marginBottom: 8 }}>Overall Progress</div>
@@ -316,15 +285,12 @@ export default function MyProjects() {
                         <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--txt)' }}>{selectedProject.progress}%</span>
                      </div>
                   </div>
-
                   <div style={{ border: '1px solid var(--brd)', padding: 16, borderRadius: 14 }}>
                      <div style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 600, marginBottom: 8 }}>Timeline</div>
                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)' }}>
                         {selectedProject.start_date ? `${selectedProject.start_date} to ${selectedProject.end_date}` : 'Not scheduled'}
                      </div>
                   </div>
-
-                  {/* Team Members List */}
                   <div style={{ border: '1px solid var(--brd)', padding: 16, borderRadius: 14 }}>
                      <div style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 600, marginBottom: 12 }}>Team Members</div>
                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 100, overflowY: 'auto', paddingRight: 4 }}>
@@ -337,14 +303,11 @@ export default function MyProjects() {
                                {u.full_name}
                              </span>
                           </div>
-                        )) : (
-                           <div style={{ fontSize: 12, color: 'var(--txt3)' }}>No members found.</div>
-                        )}
+                        )) : <div style={{ fontSize: 12, color: 'var(--txt3)' }}>No members found.</div>}
                      </div>
                   </div>
                </div>
 
-               {/* Tasks & Subtasks List */}
                <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--txt)', marginBottom: 16, borderBottom: '1px solid var(--brd)', paddingBottom: 12 }}>Project Tasks</h3>
                
                <div style={{ border: '1px solid var(--brd)', borderRadius: 14, overflow: 'hidden' }}>
@@ -356,13 +319,11 @@ export default function MyProjects() {
                      return (
                         <div key={t.id} style={{ borderBottom: '1px solid var(--brd)', background: 'var(--bg)' }}>
                            <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 140px 100px', alignItems: 'center', padding: '12px 16px' }}>
-                              
                               <div style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center' }} onClick={() => setExpandedTasks(prev => ({ ...prev, [t.id]: !prev[t.id] }))}>
                                 {relatedSubs.length > 0 ? (
                                    <ChevronRight size={14} style={{ transform: isTaskExpanded ? 'rotate(90deg)' : '', transition: '0.2s', color: '#3B82F6' }} />
                                 ) : <StatusDot status={t.status} />}
                               </div>
-
                               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)' }}>
                                 <span onClick={() => router.push(`/tasks/${t.id}`)} style={{ cursor: 'pointer' }} className="hover-underline">{t.topic}</span>
                                 {relatedSubs.length > 0 && (
@@ -371,18 +332,14 @@ export default function MyProjects() {
                                    </span>
                                 )}
                               </div>
-
                               <div style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 500 }}>{t.end_date}</div>
-
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 {taskMembers.slice(0,3).map((u: any, i: number) => (
-                                  <div key={u.id} title={u.full_name} style={{ width: 24, height: 24, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-6px' : '0', zIndex: 10-i }}>{ini(u.full_name)}</div>
+                                  <div key={u.id} title={u.full_name} style={{ width: 24, height: 24, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10-i }}>{ini(u.full_name)}</div>
                                 ))}
                               </div>
-
                            </div>
 
-                           {/* Render Subtasks inside Modal */}
                            {isTaskExpanded && relatedSubs.map(st => (
                               <div key={st.id} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 140px 100px', alignItems: 'center', padding: '10px 16px 10px 40px', background: 'var(--bg2)', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
                                  <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -404,7 +361,6 @@ export default function MyProjects() {
                      <div style={{ padding: 24, textAlign: 'center', color: 'var(--txt3)', fontSize: 13 }}>No tasks assigned yet.</div>
                   )}
                </div>
-
             </div>
           </div>
         </div>
