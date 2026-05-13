@@ -12,7 +12,6 @@ export const metadata: Metadata = {
   },
 };
 
-// Next.js 16 standard: Viewport is handled separately from Metadata
 export const viewport: Viewport = {
   themeColor: "#3b82f6",
   width: "device-width",
@@ -26,7 +25,8 @@ export default async function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      {/* Adding it here stops the Grammarly error on the body tag */}
+      <body className={inter.className} suppressHydrationWarning>
         {children}
       </body>
     </html>

@@ -1,4 +1,5 @@
 'use client'
+
 export const dynamic = 'force-dynamic'
 import { useEffect, useState, useMemo } from 'react'
 import AppShell from '@/components/layout/AppShell'
@@ -18,7 +19,6 @@ function ini(name: string) {
   return p.length >= 2 ? (p[0][0]+p[p.length - 1][0]).toUpperCase() : name.slice(0,2).toUpperCase()
 }
 
-// Workload Stage Color Helper
 function getLoadColor(load: string) {
   switch (load) {
     case 'overload': return '#EF4444' // Red
@@ -60,13 +60,32 @@ export default function Workload() {
       const { data: me } = await supabase.from('Users').select('role').eq('id', session.user.id).single()
       setMyRole(me?.role || '')
 
-      const [u, t, s, p] = await Promise.all([
+      const [u, t, s, p, ta, sa] = await Promise.all([
         supabase.from('Users').select('id,full_name,email,role').order('full_name'),
         supabase.from('Tasks').select('*').order('end_date'),
         supabase.from('Subtasks').select('*'),
         supabase.from('Projects').select('*').order('name'),
+        supabase.from('task_assignees').select('*'),
+        supabase.from('subtask_assignees').select('*')
       ])
-      setUsers(u.data || []); setTasks(t.data || []); setSubtasks(s.data || []); setProjects(p.data || []);
+
+      const taRows = ta.data || []
+      const saRows = sa.data || []
+
+      const hydratedTasks = (t.data || []).map(task => ({
+        ...task,
+        task_assignees: taRows.filter(ta => ta.task_id === task.id)
+      }))
+
+      const hydratedSubtasks = (s.data || []).map(sub => ({
+        ...sub,
+        subtask_assignees: saRows.filter(sa => sa.subtask_id === sub.id)
+      }))
+
+      setUsers(u.data || [])
+      setTasks(hydratedTasks)
+      setSubtasks(hydratedSubtasks)
+      setProjects(p.data || [])
       setLoading(false)
     }
     loadData()
@@ -80,15 +99,16 @@ export default function Workload() {
     return users.filter(u => u.role !== 'Admin').map((u, idx) => {
       const name = u.full_name || u.email
       
-      // Handle array or string assignees defensively
-      const isAssigned = (t: any) => {
-        const ownerMatch = String(t.owner || '').toLowerCase().includes(name.toLowerCase());
-        const assigneeMatch = String(t.assignees || '').toLowerCase().includes(name.toLowerCase());
-        return ownerMatch || assigneeMatch;
-      }
+      // Global task extraction channel for this user
+      const uTasks = tasks.filter(t => {
+        const relationalMatch = (t.task_assignees || []).some((ta: any) => ta.user_id === u.id)
+        const legacyOwnerMatch = String(t.owner || '').toLowerCase().includes(name.toLowerCase())
+        const legacyAssigneeMatch = String(t.assignees || '').toLowerCase().includes(name.toLowerCase())
+        return relationalMatch || legacyOwnerMatch || legacyAssigneeMatch
+      })
 
-      const uTasks = tasks.filter(isAssigned)
-      const filtered = projFilter === 'All' ? uTasks : uTasks.filter(t => t.project_name === projFilter)
+      // Apply toolbar filter for the status overview block metrics
+      const filtered = projFilter === 'All' ? uTasks : uTasks.filter(t => t.project_name === projFilter || t.project_id === projects.find(p=>p.name === projFilter)?.id)
       
       const counts = { 
         'Not Started': filtered.filter(t => t.status === 'Not Started').length, 
@@ -97,11 +117,23 @@ export default function Workload() {
         'Completed': filtered.filter(t => t.status === 'Completed').length 
       }
       
-      const userSubtasks = subtasks.filter(s => String(s.owner || '').toLowerCase().includes(name.toLowerCase()))
+      const userSubtasks = subtasks.filter(s => {
+        const relationalSubMatch = (s.subtask_assignees || []).some((sa: any) => sa.user_id === u.id)
+        const legacySubMatch = String(s.owner || '').toLowerCase().includes(name.toLowerCase())
+        return relationalSubMatch || legacySubMatch
+      })
+
       const openTasks = filtered.filter(t => t.status !== 'Completed').length
-      
-      // Calculate Total Projects the user is assigned to
-      const userProjectNames = new Set(filtered.map(t => t.project_name).filter(Boolean))
+
+      // ── FIXED GLOBAL RECONCILIATION: Counts active projects independent of toolbar filters ──
+      const activeUserProjects = projects.filter(p => {
+        return tasks.some(t => {
+          const isProj = t.project_id === p.id || t.project_name === p.name
+          const isUserRelational = (t.task_assignees || []).some((ta: any) => ta.user_id === u.id)
+          const isUserLegacyText = String(t.owner||'').toLowerCase().includes(name.toLowerCase()) || String(t.assignees||'').toLowerCase().includes(name.toLowerCase())
+          return isProj && (isUserRelational || isUserLegacyText)
+        })
+      })
 
       return {
         ...u, 
@@ -110,16 +142,16 @@ export default function Workload() {
         counts, 
         subCount: userSubtasks.length, 
         openTasks,
-        totalProjects: userProjectNames.size,
+        totalProjects: activeUserProjects.length, // Direct mathematical match to heatmap row cells
         load: openTasks >= thresholds.overload ? 'overload' : openTasks >= thresholds.heavy ? 'heavy' : openTasks >= thresholds.normal ? 'moderate' : 'light',
         color: AVATAR_BG[idx % 6], 
         textColor: AVATAR_CL[idx % 6]
       }
     })
-  }, [users, tasks, subtasks, projFilter, thresholds])
+  }, [users, tasks, subtasks, projFilter, thresholds, projects])
 
   const globalMetrics = useMemo(() => {
-    const fTasks = projFilter === 'All' ? tasks : tasks.filter(t => t.project_name === projFilter)
+    const fTasks = projFilter === 'All' ? tasks : tasks.filter(t => t.project_name === projFilter || t.project_id === projects.find(p=>p.name === projFilter)?.id)
     const mTasks = fTasks.map(t => ({ ...t, dateObj: t.end_date ? new Date(t.end_date) : null }))
     return {
       'Not Started': mTasks.filter(t => t.status === 'Not Started'),
@@ -130,7 +162,7 @@ export default function Workload() {
       'Due This Week': mTasks.filter(t => t.dateObj && t.dateObj >= today && t.dateObj <= nextWeek && t.status !== 'Completed'),
       'Due This Month': mTasks.filter(t => t.dateObj && t.dateObj.getMonth() === thisMonth && t.dateObj.getFullYear() === thisYear && t.status !== 'Completed'),
     }
-  }, [tasks, projFilter, today])
+  }, [tasks, projFilter, today, projects])
 
   if (loading) return <AppShell title="Workload Oversight">Loading Capacity Data...</AppShell>
 
@@ -140,20 +172,20 @@ export default function Workload() {
       {/* HEADER */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => router.push('/dashboard')} className="tv-btn" style={{ padding: '8px' }}><ArrowLeft size={18}/></button>
+          <button onClick={() => router.push('/all-projects')} className="tv-btn" style={{ padding: '8px', cursor: 'pointer' }}><ArrowLeft size={18}/></button>
           <div>
             <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Team Bandwidth</h2>
-            <p style={{ color: 'var(--txt3)', fontSize: 13 }}>Analyzing distribution across {projFilter}.</p>
+            <p style={{ color: 'var(--txt3)', fontSize: 13 }}>Analyzing data across your portfolio.</p>
           </div>
         </div>
-        <button className="tv-btn" onClick={() => setShowSettings(true)}><Settings size={14} style={{ marginRight: 6 }}/> Thresholds</button>
+        <button className="tv-btn" onClick={() => setShowSettings(true)} style={{ cursor: 'pointer' }}><Settings size={14} style={{ marginRight: 6 }}/> Thresholds</button>
       </div>
 
       {/* TOOLBAR */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)', border: '1px solid var(--brd)', borderRadius: 8, padding: '4px 10px' }}>
           <Filter size={14} color="var(--txt3)" />
-          <select style={{ background: 'transparent', border: 'none', color: 'var(--txt)', fontSize: 13, outline: 'none' }} value={projFilter} onChange={e => setProjFilter(e.target.value)}>
+          <select style={{ background: 'transparent', border: 'none', color: 'var(--txt)', fontSize: 13, outline: 'none', cursor: 'pointer' }} value={projFilter} onChange={e => setProjFilter(e.target.value)}>
             <option value="All">All Projects</option>
             {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
           </select>
@@ -185,7 +217,7 @@ export default function Workload() {
         })}
       </div>
 
-      {/* TABS */}
+      {/* TAB SUB-VIEWS */}
       {tab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {memberStats.map(m => (
@@ -196,7 +228,6 @@ export default function Workload() {
                   <div style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--txt3)' }}>{m.role}</div>
                 </div>
-                {/* Fixed Color Badge */}
                 <div style={{ fontSize: 10, fontWeight: 800, padding: '4px 8px', borderRadius: 6, background: `${getLoadColor(m.load)}1A`, color: getLoadColor(m.load) }}>
                   {m.load.toUpperCase()}
                 </div>
@@ -235,14 +266,19 @@ export default function Workload() {
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{m.name}</span>
                     </div>
                   </td>
-                  {/* New Total Projects Assigned Column */}
                   <td style={{ padding: '4px', textAlign: 'center' }}>
                     <div style={{ margin: 'auto', width: 36, height: 36, borderRadius: 6, background: 'var(--bg2)', color: 'var(--txt)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
                       {m.totalProjects}
                     </div>
                   </td>
                   {projects.map(p => { 
-                    const count = tasks.filter(t => t.project_name === p.name && (String(t.owner||'').includes(m.name) || String(t.assignees||'').includes(m.name))).length; 
+                    const count = tasks.filter(t => {
+                      const isProj = t.project_id === p.id || t.project_name === p.name
+                      const isUserRelational = (t.task_assignees || []).some((ta: any) => ta.user_id === m.id)
+                      const isUserLegacyText = String(t.owner||'').toLowerCase().includes(m.name.toLowerCase()) || String(t.assignees||'').toLowerCase().includes(m.name.toLowerCase())
+                      return isProj && (isUserRelational || isUserLegacyText)
+                    }).length; 
+
                     return (
                       <td key={p.id} style={{ padding: '4px', textAlign: 'center' }}>
                         <div style={{ margin: 'auto', width: 36, height: 36, borderRadius: 6, background: count > 0 ? '#E6F1FB' : 'transparent', color: '#185FA5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
@@ -265,7 +301,6 @@ export default function Workload() {
               <div style={{ width: 24, fontSize: 13, fontWeight: 800, color: 'var(--txt3)' }}>#{idx + 1}</div>
               <div style={{ width: 200, display: 'flex', alignItems: 'center', gap: 12 }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: m.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{ini(m.name)}</div><div style={{ fontSize: 13, fontWeight: 700 }}>{m.name}</div></div>
               
-              {/* Progress bar respecting proper stage color */}
               <div style={{ flex: 1 }}>
                 <div style={{ height: 8, background: 'var(--bg2)', borderRadius: 10, overflow: 'hidden' }}>
                   <div style={{ width: `${Math.min((m.openTasks / thresholds.overload) * 100, 100)}%`, height: '100%', background: getLoadColor(m.load), transition: '0.3s' }} />
@@ -278,7 +313,7 @@ export default function Workload() {
         </div>
       )}
 
-      {/* POPUP MODAL FOR METRICS */}
+      {/* POPUP OVERVIEW SUMMARY MODAL */}
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setShowModal(null)}>
           <div style={{ width: '90%', maxWidth: 900, background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--brd)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
@@ -286,14 +321,27 @@ export default function Workload() {
             <div style={{ padding: 0, maxHeight: '70vh', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead><tr style={{ fontSize: 11, color: 'var(--txt3)', textTransform: 'uppercase', background: 'var(--bg2)' }}><th style={{ padding: '14px 20px' }}>Task Title</th><th>Project</th><th>Progress</th><th style={{ textAlign: 'right', paddingRight: 20 }}>Members</th></tr></thead>
-                <tbody>{globalMetrics[showModal as keyof typeof globalMetrics].map(t => { const subs = subtasks.filter(s => s.parent_task_id === t.id); const pct = subs.length ? Math.round((subs.filter(s => s.status === 'Completed').length / subs.length) * 100) : (t.status === 'Completed' ? 100 : 0); return (<tr key={t.id} style={{ borderBottom: '1px solid var(--brd)', fontSize: 13 }}><td style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer' }} onClick={() => router.push(`/tasks/${t.id}`)}>{t.topic}</td><td style={{ color: 'var(--txt2)' }}>{t.project_name}</td><td>{pct}%</td><td style={{ textAlign: 'right', paddingRight: 20 }}><div style={{ display: 'flex', justifyContent: 'flex-end' }}>{[t.owner, ...(t.assignees || [])].filter(Boolean).map((name, i) => (<div key={i} title={name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg)', marginLeft: -8 }}>{ini(name)}</div>))}</div></td></tr>)})}</tbody>
+                <tbody>{globalMetrics[showModal as keyof typeof globalMetrics].map(t => { 
+                  const subs = subtasks.filter(s => s.parent_task_id === t.id); 
+                  const pct = subs.length ? Math.round((subs.filter(s => s.status === 'Completed').length / subs.length) * 100) : (t.status === 'Completed' ? 100 : 0); 
+                  
+                  const relationAssignees = (t.task_assignees || []).map((ta: any) => users.find(usr => usr.id === ta.user_id)).filter(Boolean);
+                  const legacyNames = [t.owner, ...(Array.isArray(t.assignees) ? t.assignees : typeof t.assignees === 'string' ? t.assignees.split(',') : [])].filter(Boolean);
+                  const legacyAssignees = users.filter(usr => legacyNames.some(ln => usr.full_name.toLowerCase().includes(ln.trim().toLowerCase())));
+                  
+                  const collectiveAssignees = Array.from(new Map([...relationAssignees, ...legacyAssignees].map(u => [u.id, u])).values());
+
+                  return (
+                    <tr key={t.id} style={{ borderBottom: '1px solid var(--brd)', fontSize: 13 }}><td style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer' }} onClick={() => { setShowModal(null); router.push(`/tasks/${t.id}`); }}>{t.topic}</td><td style={{ color: 'var(--txt2)' }}>{t.project_name}</td><td>{pct}%</td><td style={{ textAlign: 'right', paddingRight: 20 }}><div style={{ display: 'flex', justifyContent: 'flex-end' }}>{collectiveAssignees.map((u, i) => (<div key={u.id} title={u.full_name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg)', marginLeft: -8 }}>{ini(u.full_name)}</div>))}</div></td></tr>
+                  )
+                })}</tbody>
               </table>
             </div>
           </div>
         </div>
       )}
 
-      {/* THRESHOLD SETTINGS - Fixed Transparency */}
+      {/* THRESHOLD CONFIGURATION SLIDER MODAL */}
       {showSettings && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, backdropFilter: 'blur(2px)' }}>
           <div style={{ width: 400, padding: 24, background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--brd)', boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
@@ -312,10 +360,10 @@ export default function Workload() {
                   <label style={{ fontSize:11, fontWeight:800, color:'var(--txt2)' }}>{row.l}</label>
                   <span style={{ fontWeight: 800 }}>{draftT[row.k as keyof Thresholds]}</span>
                 </div>
-                <input type="range" min="1" max="25" style={{ width:'100%' }} value={draftT[row.k as keyof Thresholds]} onChange={e => setDraftT({...draftT, [row.k]: parseInt(e.target.value)})} />
+                <input type="range" min="1" max="25" style={{ width:'100%', cursor: 'pointer' }} value={draftT[row.k as keyof Thresholds]} onChange={e => setDraftT({...draftT, [row.k]: parseInt(e.target.value)})} />
               </div>
             ))}
-            <button className="btn btn-primary" style={{ width:'100%', marginTop:10 }} onClick={() => { setThresholds(draftT); localStorage.setItem('workload-thresholds', JSON.stringify(draftT)); setShowSettings(false); }}>Save Configurations</button>
+            <button className="btn btn-primary" style={{ width:'100%', marginTop:10, cursor: 'pointer' }} onClick={() => { setThresholds(draftT); localStorage.setItem('workload-thresholds', JSON.stringify(draftT)); setShowSettings(false); }}>Save Configurations</button>
           </div>
         </div>
       )}

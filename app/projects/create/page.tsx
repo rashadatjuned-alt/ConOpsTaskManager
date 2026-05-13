@@ -16,8 +16,8 @@ const COLORS = [
   { hex: '#3B6D11', label: 'Forest' },
   { hex: '#854F0B', label: 'Brown'  },
   { hex: '#185FA5', label: 'Navy'   },
-  { hex: '#14B8A6', label: 'Teal'   }, // Added to make 10
-  { hex: '#EC4899', label: 'Pink'   }, // Added to make 10
+  { hex: '#14B8A6', label: 'Teal'   }, 
+  { hex: '#EC4899', label: 'Pink'   }, 
 ]
 
 interface InlineTask {
@@ -27,7 +27,7 @@ interface InlineTask {
   type: string
   start_date: string
   end_date: string
-  assignees: string[]
+  assignees: string[] // Tracks user IDs instead of names
 }
 
 export default function CreateProject() {
@@ -49,12 +49,11 @@ export default function CreateProject() {
   useEffect(() => {
     supabase.from('Users').select('id,full_name,email,role')
       .then(({ data }) => {
-        // Exclude Admins immediately
         setUsers((data || []).filter((u: any) => u.role !== 'Admin'))
       })
   }, [])
 
-  // ── Project Members ──
+  // Project Members Toggle
   const toggleMember = (id: string) => {
     setMembers(prev => {
       const isSelected = prev.includes(id)
@@ -62,20 +61,16 @@ export default function CreateProject() {
       
       // Cascading logic: If a user is removed from the project, remove them from all inline tasks
       if (isSelected) {
-        const removedUser = users.find(u => u.id === id)
-        const removedName = removedUser?.full_name || removedUser?.email
-        if (removedName) {
-          setTasks(currentTasks => currentTasks.map(t => ({
-            ...t,
-            assignees: t.assignees.filter(a => a !== removedName)
-          })))
-        }
+        setTasks(currentTasks => currentTasks.map(t => ({
+          ...t,
+          assignees: t.assignees.filter(aId => aId !== id)
+        })))
       }
       return nextMembers
     })
   }
 
-  // ── Inline Tasks ──
+  // Inline Tasks Creators
   const addTask = () => setTasks(prev => [...prev, {
     id: `new-${Date.now()}`, topic: '', description: '', type: 'One-time',
     start_date: today, end_date: nextWeek, assignees: []
@@ -86,17 +81,17 @@ export default function CreateProject() {
 
   const removeTask = (id: string) => setTasks(prev => prev.filter(t => t.id !== id))
 
-  const toggleTaskAssignee = (taskId: string, name: string) => {
+  const toggleTaskAssignee = (taskId: string, userId: string) => {
     setTasks(prev => prev.map(t => {
       if (t.id !== taskId) return t
       return {
         ...t,
-        assignees: t.assignees.includes(name) ? t.assignees.filter(a => a !== name) : [...t.assignees, name]
+        assignees: t.assignees.includes(userId) ? t.assignees.filter(id => id !== userId) : [...t.assignees, userId]
       }
     }))
   }
 
-  // ── Submit ──
+  // Submit Handler
   const handleSubmit = async () => {
     setError(''); setSuccess(''); setSaving(true)
     
@@ -108,35 +103,55 @@ export default function CreateProject() {
     }
 
     try {
-      // 1. Create Project
-      const { error: projErr } = await supabase.from('Projects').insert({
+      // 1. Create Project row (members array column dropped from table)
+      const { data: projData, error: projErr } = await supabase.from('Projects').insert({
         name: name.trim(), 
         description: desc.trim(), 
-        color_code: color, 
-        members: members
-      })
+        color_code: color
+      }).select().single()
+
       if (projErr) throw new Error(`Project creation failed: ${projErr.message}`)
 
-      // 2. Create Inline Tasks (if any)
-      if (tasks.length > 0) {
-        const taskPayloads = tasks.map(t => ({
-          project_name: name.trim(),
-          topic: t.topic.trim(),
-          description: t.description.trim(),
-          type: t.type,
-          start_date: t.start_date,
-          end_date: t.end_date,
-          owner: t.assignees.join(', '),
-          assignees: t.assignees,
-          status: 'Not Started', // Enforced requirement
-          tags: []
+      // 2. Populating project_members relational junction table
+      if (members.length > 0) {
+        const memberPayloads = members.map(uid => ({
+          project_id: projData.id,
+          user_id: uid
         }))
-
-        const { error: tasksErr } = await supabase.from('Tasks').insert(taskPayloads)
-        if (tasksErr) throw new Error(`Project created, but tasks failed: ${tasksErr.message}`)
+        const { error: memErr } = await supabase.from('project_members').insert(memberPayloads)
+        if (memErr) throw new Error(`Project created, but adding team members failed: ${memErr.message}`)
       }
 
-      setSuccess(`✅ Project "${name.trim()}" created successfully!`)
+      // 3. Create Inline Tasks dynamically linked via project_id
+      if (tasks.length > 0) {
+        for (const t of tasks) {
+          const { data: taskData, error: taskErr } = await supabase.from('Tasks').insert({
+            project_id: projData.id,
+            project_name: name.trim(), // Kept for flat visual lookups if needed
+            topic: t.topic.trim(),
+            description: t.description.trim(),
+            type: t.type,
+            start_date: t.start_date,
+            end_date: t.end_date,
+            status: 'Not Started',
+            tags: []
+          }).select().single()
+
+          if (taskErr) throw new Error(`Task "${t.topic}" creation failed: ${taskErr.message}`)
+
+          // Write task assignments safely to task_assignees junction table
+          if (t.assignees.length > 0) {
+            const assigneePayloads = t.assignees.map(uid => ({
+              task_id: taskData.id,
+              user_id: uid
+            }))
+            const { error: taErr } = await supabase.from('task_assignees').insert(assigneePayloads)
+            if (taErr) throw new Error(`Task assignments failed for "${t.topic}": ${taErr.message}`)
+          }
+        }
+      }
+
+      setSuccess(`🎉 Project "${name.trim()}" created successfully!`)
       setTimeout(() => router.push('/all-projects'), 1200)
     } catch (e: any) {
       setError(e.message)
@@ -145,12 +160,12 @@ export default function CreateProject() {
     setSaving(false)
   }
 
-  // Filter available users for Task Assignment based on selected Project Members
+  // Filter project users pool using specific list of members
   const projectUsers = users.filter(u => members.includes(u.id))
 
   return (
     <AppShell title="New Project">
-      {/* ── INJECTED CSS FOR AUTO LIGHT/DARK MODE ── */}
+      {/* INJECTED CSS FOR AUTO LIGHT/DARK MODE  */}
       <style dangerouslySetInnerHTML={{ __html: `
         .tv-wrapper {
           --bg-color: transparent;
@@ -229,7 +244,7 @@ export default function CreateProject() {
 
       <div className="tv-wrapper">
         
-        {/* ── TOP ACTION BAR ── */}
+        {/* TOP ACTION BAR  */}
         <div className="tv-top-bar">
           <button className="tv-back-nav" onClick={() => router.back()}>
             <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"></path></svg>
@@ -238,7 +253,7 @@ export default function CreateProject() {
           
           <div className="tv-actions">
             <button className="tv-btn tv-btn-primary" onClick={handleSubmit} disabled={saving}>
-              {saving ? 'Creating...' : '💾 Create Project'}
+              {saving ? 'Creating...' : ' Create Project'}
             </button>
           </div>
         </div>
@@ -246,7 +261,7 @@ export default function CreateProject() {
         {error   && <div className="tv-alert tv-alert-error">{error}</div>}
         {success && <div className="tv-alert tv-alert-success">{success}</div>}
 
-        {/* ── 1. PROJECT DETAILS ── */}
+        {/* 1. PROJECT DETAILS  */}
         <div className="tv-card">
           <div className="tv-section-title">Project Details</div>
           
@@ -284,7 +299,7 @@ export default function CreateProject() {
           </div>
         </div>
 
-        {/* ── 2. PROJECT TEAM (Assignees) ── */}
+        {/* 2. PROJECT TEAM  */}
         <div className="tv-card">
           <div className="tv-section-title">
             Project Team
@@ -300,7 +315,7 @@ export default function CreateProject() {
                 const sel = members.includes(u.id)
                 return (
                   <button key={u.id} type="button" onClick={() => toggleMember(u.id)} className={`tv-chip ${sel ? 'selected' : ''}`}>
-                    {sel ? '✓ ' : ''}{u.full_name || u.email}
+                    {u.full_name || u.email}
                   </button>
                 )
               })
@@ -308,11 +323,11 @@ export default function CreateProject() {
           </div>
         </div>
 
-        {/* ── 3. INLINE MAIN TASKS ── */}
+        {/* 3. INLINE MAIN TASKS  */}
         <div className="tv-card">
           <div className="tv-section-title">
             Main Tasks
-            <button className="tv-btn" onClick={addTask}>＋ Add Task</button>
+            <button className="tv-btn" onClick={addTask}> Add Task</button>
           </div>
 
           {tasks.length === 0 ? (
@@ -358,18 +373,19 @@ export default function CreateProject() {
 
                     <td>
                       <div className="tv-chip-container" style={{ gap: 4 }}>
-                        {projectUsers.length === 0 
-                          ? <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Add people to Project Team first</span>
-                          : projectUsers.map(u => {
-                              const name = u.full_name || u.email
-                              const sel = t.assignees.includes(name)
-                              return (
-                                <button key={u.id} type="button" onClick={() => toggleTaskAssignee(t.id, name)} className={`tv-chip ${sel ? 'selected' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }}>
-                                  {sel ? '✓ ' : ''}{name.split(' ')[0]}
-                                </button>
-                              )
-                            })
-                        }
+                        {projectUsers.length === 0 ? (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Add people to Project Team first</span>
+                        ) : (
+                          projectUsers.map(u => {
+                            const name = u.full_name || u.email
+                            const sel = t.assignees.includes(u.id)
+                            return (
+                              <button key={u.id} type="button" onClick={() => toggleTaskAssignee(t.id, u.id)} className={`tv-chip ${sel ? 'selected' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }}>
+                                {name.split(' ')[0]}
+                              </button>
+                            )
+                          })
+                        )}
                       </div>
                     </td>
 

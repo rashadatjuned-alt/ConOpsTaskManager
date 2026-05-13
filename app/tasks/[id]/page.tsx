@@ -1,11 +1,11 @@
 'use client'
 
 export const dynamic = 'force-dynamic'
-import { useEffect, useState, useCallback, use } from 'react' // Added use
+import { useEffect, useState, useCallback, use } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation' // Removed useParams
-import type { Status, Resource } from '@/types'
+import { useRouter } from 'next/navigation'
+import type { Resource } from '@/types'
 
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 const TYPES    = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
@@ -27,12 +27,6 @@ function nextRecurrence(start: string, end: string, type: string) {
   return { start: newStart, end: newEnd }
 }
 
-function assigneesFromRow(row: any): string[] {
-  if (Array.isArray(row.assignees) && row.assignees.length > 0) return row.assignees
-  if (row.owner) return row.owner.split(',').map((s: string) => s.trim()).filter(Boolean)
-  return []
-}
-
 export default function TaskDetail({ params }: TaskDetailProps) {
   const router   = useRouter()
   
@@ -43,16 +37,17 @@ export default function TaskDetail({ params }: TaskDetailProps) {
   const [task,         setTask]         = useState<any>(null)
   const [subtasks,     setSubtasks]     = useState<any[]>([])
   const [projectTeam,  setProjectTeam]  = useState<any[]>([])
+  const [allUsers,     setAllUsers]     = useState<any[]>([])
   const [myRole,       setMyRole]       = useState('')
   const [editing,      setEditing]      = useState(false)
   const [saving,       setSaving]       = useState(false)
   const [cloning,      setCloning]      = useState(false)
-  const [deleting,      setDeleting]     = useState(false)
+  const [deleting,     setDeleting]     = useState(false)
   const [error,        setError]        = useState('')
   const [success,      setSuccess]      = useState('')
   const [loading,      setLoading]      = useState(true)
 
-  // local edit state
+  // Local edit states
   const [editTask,     setEditTask]     = useState<any>(null)
   const [editSubtasks, setEditSubtasks] = useState<any[]>([])
   const [resources,    setResources]    = useState<Resource[]>([])
@@ -63,34 +58,65 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     const { data: me } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
     setMyRole(me?.role || 'Team Member')
 
-    const [{ data: t }, { data: s }] = await Promise.all([
+    // Fetch master list of users to draw names contextually
+    const { data: usersData } = await supabase.from('Users').select('id,full_name,role')
+    const filteredUsers = (usersData || []).filter((u: any) => u.role !== 'Admin')
+    setAllUsers(filteredUsers)
+
+    // Parallel fetch: Parent task data, task assignees rows, child subtasks data, subtask assignees rows
+    const [taskRes, taskAssigneesRes, subtasksRes, subtaskAssigneesRes] = await Promise.all([
       supabase.from('Tasks').select('*').eq('id', id).single(),
+      supabase.from('task_assignees').select('user_id').eq('task_id', id),
       supabase.from('Subtasks').select('*').eq('parent_task_id', id).order('id'),
+      supabase.from('subtask_assignees').select('subtask_id, user_id')
     ])
 
-    if (!t) { setLoading(false); return }
-    setTask(t)
-    setSubtasks(s || [])
-    setResources(Array.isArray(t.resources) ? t.resources : [])
+    if (!taskRes.data) { setLoading(false); return }
 
-    if (t.project_name) {
-      const { data: proj } = await supabase.from('Projects').select('members').eq('name', t.project_name).single()
-      if (proj?.members?.length) {
-        const { data: users } = await supabase.from('Users').select('id,full_name,role').in('id', proj.members)
-        setProjectTeam((users || []).filter((u: any) => u.role !== 'Admin'))
-      } else {
-        const { data: users } = await supabase.from('Users').select('id,full_name,role')
-        setProjectTeam((users || []).filter((u: any) => u.role !== 'Admin'))
-      }
+    const activeTaskAssigneeIds = (taskAssigneesRes.data || []).map(ta => ta.user_id)
+    
+    // Construct task state payload with direct relationally loaded assignee array
+    const hydratedTask = {
+      ...taskRes.data,
+      assignees: activeTaskAssigneeIds
     }
+
+    // Map subtasks to inject their relationally active assignee arrays natively
+    const hydratedSubtasks = (subtasksRes.data || []).map(sub => {
+      const activeSubAssigneeIds = (subtaskAssigneesRes.data || [])
+        .filter(sa => sa.subtask_id === sub.id)
+        .map(sa => sa.user_id)
+      return {
+        ...sub,
+        assignees: activeSubAssigneeIds
+      }
+    })
+
+    setTask(hydratedTask)
+    setSubtasks(hydratedSubtasks)
+    setResources(Array.isArray(hydratedTask.resources) ? hydratedTask.resources : [])
+
+    // Fetch localized project team pool based on the new project_id reference
+    if (hydratedTask.project_id) {
+      const { data: pm } = await supabase.from('project_members').select('user_id').eq('project_id', hydratedTask.project_id)
+      if (pm && pm.length > 0) {
+        const memberIds = pm.map(m => m.user_id)
+        setProjectTeam(filteredUsers.filter(u => memberIds.includes(u.id)))
+      } else {
+        setProjectTeam([])
+      }
+    } else {
+      setProjectTeam(filteredUsers)
+    }
+    
     setLoading(false)
   }, [id])
 
   useEffect(() => { loadTask() }, [loadTask])
 
   const startEdit = () => {
-    setEditTask({ ...task })
-    setEditSubtasks(subtasks.map((s: any) => ({ ...s })))
+    setEditTask({ ...task, assignees: [...(task.assignees || [])] })
+    setEditSubtasks(subtasks.map((s: any) => ({ ...s, assignees: [...(s.assignees || [])] })))
     setEditing(true)
     setError('')
   }
@@ -115,13 +141,14 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     setTask(updated)
     await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
 
+    // Handle automated generation of subsequent recurring instance templates
     if (newStatus === 'Completed' && task.type !== 'One-time') {
       const { start, end } = nextRecurrence(task.start_date, task.end_date, task.type)
       const { data: newTask } = await supabase.from('Tasks').insert({
-        project_name: task.project_name,
+        project_id: task.project_id,
+        project_name: task.project_name, // Kept to support layout references if any
         topic: task.topic,
         description: task.description,
-        assignees: task.assignees,
         type: task.type,
         start_date: start,
         end_date: end,
@@ -131,16 +158,33 @@ export default function TaskDetail({ params }: TaskDetailProps) {
       }).select().single()
 
       if (newTask) {
+        // Cascade master task allocations to the new instance
+        if (task.assignees && task.assignees.length > 0) {
+          const newAssigneesPayload = task.assignees.map((userId: string) => ({
+            task_id: newTask.id,
+            user_id: userId
+          }))
+          await supabase.from('task_assignees').insert(newAssigneesPayload)
+        }
+
+        // Cascade subtask definitions and assignments relationally
         for (const sub of subtasks) {
-          await supabase.from('Subtasks').insert({
+          const { data: newSub } = await supabase.from('Subtasks').insert({
             parent_task_id: newTask.id,
             topic: sub.topic,
             description: sub.description,
-            assignees: assigneesFromRow(sub),
             start_date: start,
             end_date: end,
             status: 'Not Started',
-          })
+          }).select().single()
+
+          if (newSub && sub.assignees && sub.assignees.length > 0) {
+            const newSubAssigneesPayload = sub.assignees.map((userId: string) => ({
+              subtask_id: newSub.id,
+              user_id: userId
+            }))
+            await supabase.from('subtask_assignees').insert(newSubAssigneesPayload)
+          }
         }
         setSuccess(`✅ Next ${task.type} instance created (${start}).`)
         setTimeout(() => setSuccess(''), 4000)
@@ -157,13 +201,17 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     }
     for (const s of editSubtasks) {
       if (!s.topic?.trim()) { setError('All subtask titles are required.'); setSaving(false); return }
+      if (s.start_date < editTask.start_date || s.end_date > editTask.end_date) {
+        setError(`Subtask "${s.topic}" dates must be within parent task dates.`)
+        setSaving(false); return
+      }
     }
 
     try {
+      // 1. Update Core Task Properties
       await supabase.from('Tasks').update({
         topic: editTask.topic.trim(),
         description: editTask.description?.trim() || '',
-        assignees: editTask.assignees || [],
         type: editTask.type,
         start_date: editTask.start_date,
         end_date: editTask.end_date,
@@ -171,19 +219,37 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         resources: resources,
       }).eq('id', id)
 
+      // 2. Re-synchronize Task Assignments inside Junction Table
+      await supabase.from('task_assignees').delete().eq('task_id', id)
+      if (editTask.assignees && editTask.assignees.length > 0) {
+        const insertPayload = editTask.assignees.map((uid: string) => ({ task_id: id, user_id: uid }))
+        await supabase.from('task_assignees').insert(insertPayload)
+      }
+
+      // 3. Process Child Subtask Modifications & Assignment Chains
       for (const s of editSubtasks) {
         const payload = {
           topic: s.topic.trim(),
           description: s.description?.trim() || '',
-          assignees: s.assignees || [],
           start_date: s.start_date,
           end_date: s.end_date,
           status: s.status,
         }
+
+        let targetSubtaskId = s.id
+
         if (s.isNew) {
-          await supabase.from('Subtasks').insert({ ...payload, parent_task_id: Number(id) })
+          const { data: newSub } = await supabase.from('Subtasks').insert({ ...payload, parent_task_id: Number(id) }).select().single()
+          targetSubtaskId = newSub.id
         } else {
           await supabase.from('Subtasks').update(payload).eq('id', s.id)
+          // Wipe previous sub-allocations before updating rows
+          await supabase.from('subtask_assignees').delete().eq('subtask_id', s.id)
+        }
+
+        if (s.assignees && s.assignees.length > 0) {
+          const subAssignInsert = s.assignees.map((uid: string) => ({ subtask_id: targetSubtaskId, user_id: uid }))
+          await supabase.from('subtask_assignees').insert(subAssignInsert)
         }
       }
 
@@ -198,10 +264,10 @@ export default function TaskDetail({ params }: TaskDetailProps) {
   const handleClone = async () => {
     setCloning(true)
     const { data: newTask } = await supabase.from('Tasks').insert({
+      project_id: task.project_id,
       project_name: task.project_name,
       topic: `${task.topic} (Copy)`,
       description: task.description,
-      assignees: task.assignees,
       type: task.type,
       start_date: task.start_date,
       end_date: task.end_date,
@@ -210,16 +276,25 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     }).select().single()
 
     if (newTask) {
+      if (task.assignees && task.assignees.length > 0) {
+        const cloneAssignPayload = task.assignees.map((uid: string) => ({ task_id: newTask.id, user_id: uid }))
+        await supabase.from('task_assignees').insert(cloneAssignPayload)
+      }
+
       for (const sub of subtasks) {
-        await supabase.from('Subtasks').insert({
+        const { data: newSub } = await supabase.from('Subtasks').insert({
           parent_task_id: newTask.id,
           topic: sub.topic,
           description: sub.description,
-          assignees: assigneesFromRow(sub),
           start_date: sub.start_date,
           end_date: sub.end_date,
           status: 'Not Started',
-        })
+        }).select().single()
+
+        if (newSub && sub.assignees && sub.assignees.length > 0) {
+          const cloneSubAssignPayload = sub.assignees.map((uid: string) => ({ subtask_id: newSub.id, user_id: uid }))
+          await supabase.from('subtask_assignees').insert(cloneSubAssignPayload)
+        }
       }
       router.push(`/tasks/${newTask.id}`)
     }
@@ -229,24 +304,31 @@ export default function TaskDetail({ params }: TaskDetailProps) {
   const handleDelete = async () => {
     if (!confirm(`Delete "${task.topic}"? This cannot be undone.`)) return
     setDeleting(true)
-    await supabase.from('Subtasks').delete().eq('parent_task_id', id)
+    // ON DELETE CASCADE automatically handles wiping subtasks, task_assignees, and subtask_assignees
     await supabase.from('Tasks').delete().eq('id', id)
     router.back()
   }
 
-  const toggleAssignee = (name: string) => {
-    const cur: string[] = editTask.assignees || []
-    setEditTask((p: any) => ({
-      ...p,
-      assignees: cur.includes(name) ? cur.filter(a => a !== name) : [...cur, name],
-    }))
+  const toggleAssignee = (userId: string) => {
+    setEditTask((prev: any) => {
+      const cur: string[] = prev.assignees || []
+      const next = cur.includes(userId) ? cur.filter(id => id !== userId) : [...cur, userId]
+      
+      // Cascade clear child allocations if rolled off main task scope
+      if (cur.includes(userId)) {
+        setEditSubtasks(subs => subs.map(s => ({
+          ...s, assignees: (s.assignees || []).filter((id: string) => id !== userId)
+        })))
+      }
+      return { ...prev, assignees: next }
+    })
   }
 
-  const toggleSubAssignee = (subId: string, name: string) => {
+  const toggleSubAssignee = (subId: string, userId: string) => {
     setEditSubtasks(prev => prev.map((s: any) => {
       if (String(s.id) !== String(subId)) return s
       const cur: string[] = s.assignees || []
-      return { ...s, assignees: cur.includes(name) ? cur.filter(a => a !== name) : [...cur, name] }
+      return { ...s, assignees: cur.includes(userId) ? cur.filter(id => id !== userId) : [...cur, userId] }
     }))
   }
 
@@ -274,8 +356,7 @@ export default function TaskDetail({ params }: TaskDetailProps) {
   if (loading) return <AppShell title="Task Detail"><div style={{ padding: 40, textAlign: 'center' }}>Loading...</div></AppShell>
   if (!task)   return <AppShell title="Task Detail"><div style={{ color: 'red', padding: 20 }}>Task not found.</div></AppShell>
 
-  const taskAssignees = assigneesFromRow(task)
-  const editAssignees: string[] = editing ? (editTask?.assignees || []) : taskAssignees
+  const editAssignees: string[] = editing ? (editTask?.assignees || []) : (task?.assignees || [])
   const isRecurring = task.type && task.type !== 'One-time'
 
   return (
@@ -329,7 +410,11 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         .tv-btn:hover { background-color: var(--btn-hover); }
         .tv-btn-primary { background-color: var(--text-main); color: var(--card-bg); }
         .tv-btn-danger { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); border-color: transparent; }
-        .tv-status-select { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); border: 1px solid transparent; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; appearance: none; padding-right: 24px; background-image: var(--arrow-blue); background-repeat: no-repeat; background-position: right 10px top 50%; background-size: 8px auto; }
+        
+        .tv-status-select { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); border: 1px solid transparent; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; outline: none; appearance: none; padding-right: 24px; background-image: var(--arrow-blue); background-repeat: no-repeat; background-position: right 10px top 50%; background-size: 8px auto; }
+        .tv-status-sub { background-color: var(--pill-gray-bg); color: var(--pill-gray-txt); background-image: var(--arrow-gray); padding: 4px 10px; padding-right: 20px; font-size: 11px; }
+        .tv-status-sub.in-progress { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); background-image: var(--arrow-blue); }
+
         .tv-card { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; box-shadow: var(--shadow-sm); }
         .tv-section-title { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
         .tv-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
@@ -337,14 +422,19 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         .tv-field { display: flex; flex-direction: column; gap: 6px; }
         .tv-label { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; letter-spacing: 0.05em; }
         .tv-val { font-size: 14px; color: var(--text-main); }
-        .tv-input { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; }
-        .tv-textarea { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); min-height: 80px; }
+        .tv-input { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; }
+        .tv-textarea { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; min-height: 80px; resize: vertical; }
         .tv-table { width: 100%; border-collapse: collapse; text-align: left; }
-        .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--text-label); padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
-        .tv-table td { font-size: 13px; padding: 12px; border-bottom: 1px solid var(--border-color); }
+        .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
+        .tv-table td { font-size: 13px; color: var(--text-main); padding: 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+        
+        .tv-action-col { width: 80px; text-align: right; }
+        .tv-icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; margin-left: 8px; transition: 0.2s; }
+        .tv-icon-btn:hover { color: var(--btn-delete-txt); }
+        
         .tv-chip-container { display: flex; gap: 8px; flex-wrap: wrap; }
-        .tv-chip { background: var(--btn-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 4px 10px; font-size: 12px; }
-        .tv-chip.selected { background-color: var(--text-main); color: var(--card-bg); }
+        .tv-chip { background: var(--btn-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 4px 10px; font-size: 12px; color: var(--text-main); transition: 0.2s; cursor: pointer; }
+        .tv-chip.selected { background-color: var(--text-main); color: var(--card-bg); border-color: var(--text-main); }
         .tv-alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
         .tv-alert-error { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); }
         .tv-alert-success { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; }
@@ -388,11 +478,12 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         {success && <div className="tv-alert tv-alert-success">{success}</div>}
         {isRecurring && <div className="tv-alert tv-alert-info">🔄 <strong>{task.type} recurring task</strong></div>}
 
+        {/* ── 1. TASK DETAILS ── */}
         <div className="tv-card">
           <div className="tv-section-title">Task Details</div>
           <div className="tv-grid-2">
             <div className="tv-field">
-              <span className="tv-label">Task Title</span>
+              <span className="tv-label">Task Title *</span>
               {editing 
                 ? <input className="tv-input" value={editTask.topic || ''} onChange={e => setEditTask((p: any) => ({ ...p, topic: e.target.value }))} />
                 : <span className="tv-val">{task.topic}</span>
@@ -408,7 +499,7 @@ export default function TaskDetail({ params }: TaskDetailProps) {
             <span className="tv-label">Description</span>
             {editing
               ? <textarea className="tv-textarea" value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
-              : <span className="tv-val">{task.description || 'No description.'}</span>
+              : <span className="tv-val" style={{ whiteSpace: 'pre-wrap' }}>{task.description || 'No description.'}</span>
             }
           </div>
 
@@ -437,69 +528,196 @@ export default function TaskDetail({ params }: TaskDetailProps) {
           </div>
         </div>
 
+        {/* ── 2. ASSIGNED TO ── */}
         <div className="tv-card">
-          <div className="tv-section-title">Assigned To</div>
+          <div className="tv-section-title">
+            Assigned To
+            {editing && task.project_name && <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>
+              Showing members from {task.project_name}
+            </span>}
+          </div>
           <div className="tv-chip-container">
             {editing ? (
-              projectTeam.map((u: any) => {
-                const sel = editAssignees.includes(u.full_name)
-                return (
-                  <button key={u.id} type="button" onClick={() => toggleAssignee(u.full_name)} className={`tv-chip ${sel ? 'selected' : ''}`}>
-                    {u.full_name}
-                  </button>
-                )
-              })
+              projectTeam.length === 0 ? (
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No members found.</span>
+              ) : (
+                projectTeam.map((u: any) => {
+                  const sel = editAssignees.includes(u.id)
+                  return (
+                    <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)} className={`tv-chip ${sel ? 'selected' : ''}`}>
+                      {sel ? '✓ ' : ''}{u.full_name}
+                    </button>
+                  )
+                })
+              )
             ) : (
-              taskAssignees.map(a => <div key={a} className="tv-chip">{a}</div>)
+              (task.assignees || []).length === 0 ? (
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No members assigned.</span>
+              ) : (
+                task.assignees.map((uid: string) => {
+                  const uObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
+                  return <div key={uid} className="tv-chip">{uObj ? uObj.full_name : 'Unknown User'}</div>
+                })
+              )
             )}
           </div>
         </div>
 
+        {/* ── 3. RESOURCES ── */}
         <div className="tv-card">
           <div className="tv-section-title">
             Resources
             {editing && <button className="tv-btn" onClick={addResource}>＋ Add</button>}
           </div>
-          <table className="tv-table">
-            <thead>
-              <tr><th style={{ width: 50 }}>SL</th><th>Description</th><th>Link</th></tr>
-            </thead>
-            <tbody>
-              {resources.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.sl}</td>
-                  <td>{editing ? <input className="tv-input" value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} /> : r.title}</td>
-                  <td>{editing ? <input className="tv-input" value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} /> : <a href={r.link} className="tv-link">{r.link}</a>}</td>
+          {resources.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 13, color: 'var(--text-muted)' }}>No resources attached.</div>
+          ) : (
+            <table className="tv-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 50 }}>SL</th>
+                  <th>Description</th>
+                  <th>Link</th>
+                  {editing && <th className="tv-action-col">Actions</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {resources.map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.sl}</td>
+                    <td>
+                      {editing 
+                        ? <input className="tv-input" style={{ padding: '6px 10px' }} placeholder="Resource name..." value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} /> 
+                        : <span>{r.title || '—'}</span>
+                      }
+                    </td>
+                    <td>
+                      {editing 
+                        ? <input className="tv-input" style={{ padding: '6px 10px' }} placeholder="https://..." value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} /> 
+                        : <a href={r.link} target="_blank" rel="noreferrer" style={{ color: 'var(--pill-blue-txt)', textDecoration: 'underline' }}>{r.link || '—'}</a>
+                      }
+                    </td>
+                    {editing && (
+                      <td className="tv-action-col">
+                        <button className="tv-icon-btn" onClick={() => removeResource(i)}>✕</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
+        {/* ── 4. SUBTASKS ── */}
         <div className="tv-card">
           <div className="tv-section-title">
             Subtasks
             {editing && <button className="tv-btn" onClick={addSubtask}>＋ Add Subtask</button>}
           </div>
-          <table className="tv-table">
-            <thead>
-              <tr><th>Title</th><th>Start</th><th>End</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {(editing ? editSubtasks : subtasks).map((s, i) => (
-                <tr key={s.id}>
-                  <td>{editing ? <input className="tv-input" value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} /> : s.topic}</td>
-                  <td>{editing ? <input type="date" className="tv-input" value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} /> : s.start_date}</td>
-                  <td>{editing ? <input type="date" className="tv-input" value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} /> : s.end_date}</td>
-                  <td>
-                    <select className="tv-status-select" value={s.status} onChange={e => updateSub(String(s.id), 'status', e.target.value)}>
-                      {STATUSES.map(st => <option key={st}>{st}</option>)}
-                    </select>
-                  </td>
+          {(!editing && subtasks.length === 0) || (editing && editSubtasks.length === 0) ? (
+            <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 13, color: 'var(--text-muted)' }}>No subtasks yet.</div>
+          ) : (
+            <table className="tv-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 40 }}>SL</th>
+                  <th style={{ width: '35%' }}>Title & Description</th>
+                  <th>Start Date</th>
+                  <th>End Date</th>
+                  <th>Assigned To</th>
+                  <th>Status</th>
+                  {editing && <th className="tv-action-col">Actions</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(editing ? editSubtasks : subtasks).map((s, i) => {
+                  return (
+                    <tr key={s.id}>
+                      <td><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>#{i + 1}</span></td>
+                      <td>
+                        {editing ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <input className="tv-input" style={{ padding: '6px 10px' }} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} placeholder="Title..." />
+                            <textarea className="tv-textarea" style={{ padding: '6px 10px', minHeight: 40 }} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Description..." />
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontWeight: 500 }}>{s.topic}</span>
+                            {s.description && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.description}</span>}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {editing 
+                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
+                          : <span>{s.start_date || '—'}</span>
+                        }
+                      </td>
+                      <td>
+                        {editing 
+                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
+                          : <span>{s.end_date || '—'}</span>
+                        }
+                      </td>
+                      <td>
+                        <div className="tv-chip-container" style={{ gap: 4 }}>
+                          {editing ? (
+                            editAssignees.length === 0 ? (
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Assign task first</span>
+                            ) : (
+                              editAssignees.map(uid => {
+                                const userObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
+                                const sel = (s.assignees || []).includes(uid)
+                                return (
+                                  <button key={uid} type="button" onClick={() => toggleSubAssignee(String(s.id), uid)} className={`tv-chip ${sel ? 'selected' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }}>
+                                    {sel ? '✓ ' : ''}{userObj ? userObj.full_name.split(' ')[0] : 'Unknown'}
+                                  </button>
+                                )
+                              })
+                            )
+                          ) : (
+                            (s.assignees || []).length === 0 ? (
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+                            ) : (
+                              s.assignees.map((uid: string) => {
+                                const userObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
+                                return (
+                                  <div key={uid} className="tv-chip" style={{ fontSize: 11, padding: '2px 8px' }}>
+                                    {userObj ? userObj.full_name.split(' ')[0] : 'User'}
+                                  </div>
+                                )
+                              })
+                            )
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        {editing ? (
+                          <select 
+                            className={`tv-status-select tv-status-sub ${s.status === 'In Progress' ? 'in-progress' : ''}`}
+                            value={s.status} 
+                            onChange={e => updateSub(String(s.id), 'status', e.target.value)}
+                          >
+                            {STATUSES.map(st => <option key={st}>{st}</option>)}
+                          </select>
+                        ) : (
+                          <span className={`tv-status-select tv-status-sub ${s.status === 'In Progress' ? 'in-progress' : ''}`} style={{ pointerEvents: 'none' }}>
+                            {s.status}
+                          </span>
+                        )}
+                      </td>
+                      {editing && (
+                        <td className="tv-action-col">
+                          <button className="tv-icon-btn" onClick={() => removeSub(s)}>✕</button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </AppShell>
