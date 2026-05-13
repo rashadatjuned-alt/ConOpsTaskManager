@@ -57,8 +57,6 @@ export default function AllTasks() {
   const [pf, setPf] = useState('All') 
   const [af, setAf] = useState('All') 
   const [view, setView] = useState<'list' | 'kanban'>('list')
-  
-  // NEW: State for switching Kanban mode
   const [kanbanMode, setKanbanMode] = useState<'tasks' | 'subtasks'>('tasks')
   
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
@@ -98,7 +96,7 @@ export default function AllTasks() {
     )
   }, [tasks, pf, af])
 
-  // Filter Subtasks (inherits project filter from parent task)
+  // Filter Subtasks (inherits project filter from parent task, applies assignee filter to subtask itself)
   const filteredSubtasks = useMemo(() => {
     return subtasks.filter(st => {
       const parent = tasks.find(t => String(t.id) === String(st.parent_task_id))
@@ -141,7 +139,7 @@ export default function AllTasks() {
           </button>
         )}
 
-        {/* NEW: Task/Subtask Switcher for Kanban View */}
+        {/* Task/Subtask Switcher for Kanban View */}
         {view === 'kanban' && (
           <div style={{ display: 'flex', background: 'var(--bg2)', borderRadius: 8, padding: 3, border: '1px solid var(--brd)' }}>
             <button 
@@ -223,7 +221,7 @@ export default function AllTasks() {
                       
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {taskAssignees.map((u: any, i: number) => (
-                          <div key={u.id} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0', zIndex: 10-i }}>{ini(u.full_name)}</div>
+                          <div key={u.id} title={u.full_name} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0', zIndex: 10-i }}>{ini(u.full_name)}</div>
                         ))}
                       </div>
                       
@@ -238,7 +236,7 @@ export default function AllTasks() {
                           <div /> 
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {getTaskMembers(st, allUsers).map((u: any, i: number) => (
-                              <div key={u.id} style={{ width: 18, height: 18, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', fontWeight: 900, border: '1px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0' }}>{ini(u.full_name)}</div>
+                              <div key={u.id} title={u.full_name} style={{ width: 18, height: 18, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', fontWeight: 900, border: '1px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0' }}>{ini(u.full_name)}</div>
                             ))}
                           </div>
                           <StatusPicker current={st.status} onUpdate={(val) => handleStatusChange(st.id, val, true)} />
@@ -268,7 +266,6 @@ export default function AllTasks() {
 function KanbanBoard({ mode, tasks, allTasks, subtasks, allUsers, onStatusChange }: any) {
   const router = useRouter();
 
-  // Determine what dataset we are currently dragging/rendering
   const itemsToRender = mode === 'tasks' ? tasks : subtasks;
 
   return (
@@ -309,7 +306,7 @@ function KanbanBoard({ mode, tasks, allTasks, subtasks, allUsers, onStatusChange
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                           {members.slice(0, 3).map((u: any, i: number) => (
-                            <div key={u.id} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0' }}>{ini(u.full_name)}</div>
+                            <div key={u.id} title={u.full_name} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0' }}>{ini(u.full_name)}</div>
                           ))}
                         </div>
                         <StatusPicker current={item.status} onUpdate={(val) => onStatusChange(item.id, val)} />
@@ -330,7 +327,7 @@ function KanbanBoard({ mode, tasks, allTasks, subtasks, allUsers, onStatusChange
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center' }}>
                         {members.length > 0 ? members.slice(0, 3).map((u: any, i: number) => (
-                          <div key={u.id} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0' }}>{ini(u.full_name)}</div>
+                          <div key={u.id} title={u.full_name} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-4px' : '0' }}>{ini(u.full_name)}</div>
                         )) : (
                           <span style={{ fontSize: '9px', color: 'var(--txt3)', fontWeight: 600 }}>Unassigned</span>
                         )}
