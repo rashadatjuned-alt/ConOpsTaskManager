@@ -98,13 +98,16 @@ export default function AuthPage() {
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
             
-            {/* The Node SVG Logo matched to AppShell */}
+            {/* The Node SVG Logo exactly matching the AppShell sidebar */}
             <div style={{ 
-              width: 36, height: 36, 
-              background: 'var(--txt)', // Inverts dynamically based on theme
-              color: 'var(--bg)', 
+              width: 34, 
+              height: 34, 
+              background: 'var(--nav-active-txt)', // Fixed: Matching AppShell color
+              color: 'white',                      // Fixed: Matching AppShell icon color
               borderRadius: 10, 
-              display: 'flex', alignItems: 'center', justifyContent: 'center', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
               padding: 6 
             }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '100%', height: '100%' }}>
@@ -115,7 +118,7 @@ export default function AuthPage() {
             </div>
             
             <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.5px', color: 'var(--txt)' }}>
-              ConOps <span style={{ color: 'var(--txt3)' }}>Tasker</span>
+              ConOps <span style={{ color: 'var(--nav-active-txt)' }}>Tasker</span>
             </div>
           </div>
           <div style={{ fontSize: 13, color: 'var(--txt3)', marginTop: 8, fontWeight: 500 }}>
