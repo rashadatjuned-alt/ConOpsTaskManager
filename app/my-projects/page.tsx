@@ -10,7 +10,6 @@ import {
   Folder, LayoutGrid, Columns, Filter,
   ChevronRight, Edit3, X,
 } from 'lucide-react'
-import Link from 'next/link'
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const PROJECT_STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
@@ -106,11 +105,23 @@ export default function MyProjects() {
           : 0
 
         // NEW: Start = earliest task start date, End = latest task end date
-        const startDates = projTasks.map((t: any) => t.start_date).filter(Boolean).map(d => new Date(d))
-        const endDates   = projTasks.map((t: any) => t.end_date).filter(Boolean).map(d => new Date(d))
+        const startDates = projTasks
+          .map((t: any) => t.start_date)
+          .filter(Boolean)
+          .map(d => new Date(d))
 
-        const earliestStart = startDates.length ? new Date(Math.min(...startDates)) : null
-        const latestEnd     = endDates.length   ? new Date(Math.max(...endDates)) : null
+        const endDates = projTasks
+          .map((t: any) => t.end_date)
+          .filter(Boolean)
+          .map(d => new Date(d))
+
+        const earliestStart = startDates.length
+          ? new Date(Math.min(...startDates.map(date => date.getTime())))
+          : null
+
+        const latestEnd = endDates.length
+          ? new Date(Math.max(...endDates.map(date => date.getTime())))
+          : null
 
         const rosterIds     = pmRows.filter((r: any) => r.project_id === proj.id).map((r: any) => r.user_id)
         const activeMembers = fetchedUsers.filter((u: any) => rosterIds.includes(u.id))
