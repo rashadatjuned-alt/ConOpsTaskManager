@@ -21,10 +21,10 @@ function ini(name: string) {
 
 function getLoadColor(load: string) {
   switch (load) {
-    case 'overload': return '#EF4444' // Red
-    case 'heavy': return '#F97316'    // Orange
-    case 'moderate': return '#3B82F6' // Blue
-    case 'light': return '#22C55E'    // Green
+    case 'overload': return '#EF4444'
+    case 'heavy': return '#F97316'
+    case 'moderate': return '#3B82F6'
+    case 'light': return '#22C55E'
     default: return '#888888'
   }
 }
@@ -99,7 +99,6 @@ export default function Workload() {
     return users.filter(u => u.role !== 'Admin').map((u, idx) => {
       const name = u.full_name || u.email
       
-      // Global task extraction channel for this user
       const uTasks = tasks.filter(t => {
         const relationalMatch = (t.task_assignees || []).some((ta: any) => ta.user_id === u.id)
         const legacyOwnerMatch = String(t.owner || '').toLowerCase().includes(name.toLowerCase())
@@ -107,7 +106,6 @@ export default function Workload() {
         return relationalMatch || legacyOwnerMatch || legacyAssigneeMatch
       })
 
-      // Apply toolbar filter for the status overview block metrics
       const filtered = projFilter === 'All' ? uTasks : uTasks.filter(t => t.project_name === projFilter || t.project_id === projects.find(p=>p.name === projFilter)?.id)
       
       const counts = { 
@@ -125,7 +123,6 @@ export default function Workload() {
 
       const openTasks = filtered.filter(t => t.status !== 'Completed').length
 
-      // ── FIXED GLOBAL RECONCILIATION: Counts active projects independent of toolbar filters ──
       const activeUserProjects = projects.filter(p => {
         return tasks.some(t => {
           const isProj = t.project_id === p.id || t.project_name === p.name
@@ -142,7 +139,7 @@ export default function Workload() {
         counts, 
         subCount: userSubtasks.length, 
         openTasks,
-        totalProjects: activeUserProjects.length, // Direct mathematical match to heatmap row cells
+        totalProjects: activeUserProjects.length,
         load: openTasks >= thresholds.overload ? 'overload' : openTasks >= thresholds.heavy ? 'heavy' : openTasks >= thresholds.normal ? 'moderate' : 'light',
         color: AVATAR_BG[idx % 6], 
         textColor: AVATAR_CL[idx % 6]
@@ -169,23 +166,35 @@ export default function Workload() {
   return (
     <AppShell title="Workload Oversight">
       
-      {/* HEADER */}
+      {/* HEADER - Back button now goes to Dashboard */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => router.push('/all-projects')} className="tv-btn" style={{ padding: '8px', cursor: 'pointer' }}><ArrowLeft size={18}/></button>
+          <button 
+            onClick={() => router.push('/dashboard')} 
+            className="tv-btn" 
+            style={{ padding: '8px', cursor: 'pointer' }}
+          >
+            <ArrowLeft size={18}/>
+          </button>
           <div>
             <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Team Bandwidth</h2>
             <p style={{ color: 'var(--txt3)', fontSize: 13 }}>Analyzing data across your portfolio.</p>
           </div>
         </div>
-        <button className="tv-btn" onClick={() => setShowSettings(true)} style={{ cursor: 'pointer' }}><Settings size={14} style={{ marginRight: 6 }}/> Thresholds</button>
+        <button className="tv-btn" onClick={() => setShowSettings(true)} style={{ cursor: 'pointer' }}>
+          <Settings size={14} style={{ marginRight: 6 }}/> Thresholds
+        </button>
       </div>
 
       {/* TOOLBAR */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg2)', border: '1px solid var(--brd)', borderRadius: 8, padding: '4px 10px' }}>
           <Filter size={14} color="var(--txt3)" />
-          <select style={{ background: 'transparent', border: 'none', color: 'var(--txt)', fontSize: 13, outline: 'none', cursor: 'pointer' }} value={projFilter} onChange={e => setProjFilter(e.target.value)}>
+          <select 
+            style={{ background: 'transparent', border: 'none', color: 'var(--txt)', fontSize: 13, outline: 'none', cursor: 'pointer' }} 
+            value={projFilter} 
+            onChange={e => setProjFilter(e.target.value)}
+          >
             <option value="All">All Projects</option>
             {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
           </select>
@@ -197,7 +206,23 @@ export default function Workload() {
             { id: 'heatmap', icon: <Activity size={14}/>, label: 'Heatmap' },
             { id: 'capacity', icon: <Users size={14}/>, label: 'Capacity' }
           ].map(t => (
-            <button key={t.id} onClick={() => setTab(t.id as Tab)} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, background: tab === t.id ? 'var(--bg)' : 'transparent', color: tab === t.id ? 'var(--txt)' : 'var(--txt3)' }}>
+            <button 
+              key={t.id} 
+              onClick={() => setTab(t.id as Tab)} 
+              style={{ 
+                padding: '6px 14px', 
+                borderRadius: 6, 
+                border: 'none', 
+                fontSize: 11, 
+                fontWeight: 700, 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 6, 
+                background: tab === t.id ? 'var(--bg)' : 'transparent', 
+                color: tab === t.id ? 'var(--txt)' : 'var(--txt3)' 
+              }}
+            >
               {t.icon} {t.label.toUpperCase()}
             </button>
           ))}
@@ -209,7 +234,18 @@ export default function Workload() {
         {['Not Started', 'In Progress', 'On-Hold', 'Completed'].map(id => {
           const count = globalMetrics[id as keyof typeof globalMetrics].length
           return (
-            <div key={id} onClick={() => count > 0 && setShowModal(id)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 18, cursor: count > 0 ? 'pointer' : 'default', opacity: count > 0 ? 1 : 0.6 }}>
+            <div 
+              key={id} 
+              onClick={() => count > 0 && setShowModal(id)} 
+              style={{ 
+                background: 'var(--bg)', 
+                border: '1px solid var(--brd)', 
+                borderRadius: 12, 
+                padding: 18, 
+                cursor: count > 0 ? 'pointer' : 'default', 
+                opacity: count > 0 ? 1 : 0.6 
+              }}
+            >
               <div style={{ fontSize: 24, fontWeight: 800 }}>{count}</div>
               <div style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 700, textTransform: 'uppercase' }}>{id}</div>
             </div>
@@ -299,7 +335,10 @@ export default function Workload() {
           {memberStats.sort((a,b) => b.openTasks - a.openTasks).map((m, idx) => (
             <div key={m.id} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
               <div style={{ width: 24, fontSize: 13, fontWeight: 800, color: 'var(--txt3)' }}>#{idx + 1}</div>
-              <div style={{ width: 200, display: 'flex', alignItems: 'center', gap: 12 }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: m.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{ini(m.name)}</div><div style={{ fontSize: 13, fontWeight: 700 }}>{m.name}</div></div>
+              <div style={{ width: 200, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, color: m.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{ini(m.name)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{m.name}</div>
+              </div>
               
               <div style={{ flex: 1 }}>
                 <div style={{ height: 8, background: 'var(--bg2)', borderRadius: 10, overflow: 'hidden' }}>
@@ -307,41 +346,99 @@ export default function Workload() {
                 </div>
               </div>
               
-              <div style={{ width: 100, textAlign: 'right' }}><div style={{ fontSize: 16, fontWeight: 800 }}>{m.total}</div><div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase' }}>Lifetime Tasks</div></div>
+              <div style={{ width: 100, textAlign: 'right' }}>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{m.total}</div>
+                <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase' }}>Lifetime Tasks</div>
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* POPUP OVERVIEW SUMMARY MODAL */}
+      {/* POPUP OVERVIEW SUMMARY MODAL - Purple color fixed to match Dashboard */}
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setShowModal(null)}>
           <div style={{ width: '90%', maxWidth: 900, background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--brd)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase' }}>Team {showModal} Summary</div><button onClick={() => setShowModal(null)} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><X size={20}/></button></div>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase' }}>Team {showModal} Summary</div>
+              <button onClick={() => setShowModal(null)} style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><X size={20}/></button>
+            </div>
             <div style={{ padding: 0, maxHeight: '70vh', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead><tr style={{ fontSize: 11, color: 'var(--txt3)', textTransform: 'uppercase', background: 'var(--bg2)' }}><th style={{ padding: '14px 20px' }}>Task Title</th><th>Project</th><th>Progress</th><th style={{ textAlign: 'right', paddingRight: 20 }}>Members</th></tr></thead>
-                <tbody>{globalMetrics[showModal as keyof typeof globalMetrics].map(t => { 
-                  const subs = subtasks.filter(s => s.parent_task_id === t.id); 
-                  const pct = subs.length ? Math.round((subs.filter(s => s.status === 'Completed').length / subs.length) * 100) : (t.status === 'Completed' ? 100 : 0); 
-                  
-                  const relationAssignees = (t.task_assignees || []).map((ta: any) => users.find(usr => usr.id === ta.user_id)).filter(Boolean);
-                  const legacyNames = [t.owner, ...(Array.isArray(t.assignees) ? t.assignees : typeof t.assignees === 'string' ? t.assignees.split(',') : [])].filter(Boolean);
-                  const legacyAssignees = users.filter(usr => legacyNames.some(ln => usr.full_name.toLowerCase().includes(ln.trim().toLowerCase())));
-                  
-                  const collectiveAssignees = Array.from(new Map([...relationAssignees, ...legacyAssignees].map(u => [u.id, u])).values());
+                <thead>
+                  <tr style={{ fontSize: 11, color: 'var(--txt3)', textTransform: 'uppercase', background: 'var(--bg2)' }}>
+                    <th style={{ padding: '14px 20px' }}>Task Title</th>
+                    <th>Project</th>
+                    <th>Progress</th>
+                    <th style={{ textAlign: 'right', paddingRight: 20 }}>Members</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalMetrics[showModal as keyof typeof globalMetrics].map((t: any) => { 
+                    const subs = subtasks.filter((s: any) => s.parent_task_id === t.id); 
+                    const pct = subs.length ? Math.round((subs.filter((s: any) => s.status === 'Completed').length / subs.length) * 100) : (t.status === 'Completed' ? 100 : 0); 
+                    
+                    const relationAssignees = (t.task_assignees || []).map((ta: any) => users.find((usr: any) => usr.id === ta.user_id)).filter(Boolean)
+                    const legacyNames = [t.owner, ...(Array.isArray(t.assignees) ? t.assignees : typeof t.assignees === 'string' ? t.assignees.split(',') : [])].filter(Boolean)
+                    const legacyAssignees = users.filter((usr: any) => legacyNames.some((ln: string) => usr.full_name.toLowerCase().includes(ln.trim().toLowerCase())))
+                    
+                    const collectiveAssignees = Array.from(new Map([...relationAssignees, ...legacyAssignees].map(u => [u.id, u])).values())
 
-                  return (
-                    <tr key={t.id} style={{ borderBottom: '1px solid var(--brd)', fontSize: 13 }}><td style={{ padding: '16px 20px', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer' }} onClick={() => { setShowModal(null); router.push(`/tasks/${t.id}`); }}>{t.topic}</td><td style={{ color: 'var(--txt2)' }}>{t.project_name}</td><td>{pct}%</td><td style={{ textAlign: 'right', paddingRight: 20 }}><div style={{ display: 'flex', justifyContent: 'flex-end' }}>{collectiveAssignees.map((u, i) => (<div key={u.id} title={u.full_name} style={{ width: 22, height: 22, borderRadius: '50%', fontSize: 8, fontWeight: 800, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg)', marginLeft: -8 }}>{ini(u.full_name)}</div>))}</div></td></tr>
-                  )
-                })}</tbody>
+                    return (
+                      <tr key={t.id} style={{ borderBottom: '1px solid var(--brd)', fontSize: 13 }}>
+                        <td 
+                          style={{ 
+                            padding: '16px 20px', 
+                            fontWeight: 600, 
+                            color: 'var(--txt)',           // ← Fixed: matches Dashboard list color
+                            cursor: 'pointer' 
+                          }} 
+                          onClick={() => { 
+                            setShowModal(null); 
+                            router.push(`/tasks/${t.id}`); 
+                          }}
+                        >
+                          {t.topic}
+                        </td>
+                        <td style={{ color: 'var(--txt2)', padding: '16px 20px' }}>{t.project_name}</td>
+                        <td style={{ padding: '16px 20px' }}>{pct}%</td>
+                        <td style={{ textAlign: 'right', paddingRight: 20 }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            {collectiveAssignees.map((u: any, i: number) => (
+                              <div 
+                                key={u.id} 
+                                title={u.full_name} 
+                                style={{ 
+                                  width: 22, 
+                                  height: 22, 
+                                  borderRadius: '50%', 
+                                  fontSize: 8, 
+                                  fontWeight: 800, 
+                                  background: AVATAR_BG[i % 6], 
+                                  color: AVATAR_CL[i % 6], 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  justifyContent: 'center', 
+                                  border: '2px solid var(--bg)', 
+                                  marginLeft: i > 0 ? -8 : 0 
+                                }}
+                              >
+                                {ini(u.full_name)}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
               </table>
             </div>
           </div>
         </div>
       )}
 
-      {/* THRESHOLD CONFIGURATION SLIDER MODAL */}
+      {/* THRESHOLD CONFIGURATION MODAL */}
       {showSettings && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, backdropFilter: 'blur(2px)' }}>
           <div style={{ width: 400, padding: 24, background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--brd)', boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
@@ -360,10 +457,27 @@ export default function Workload() {
                   <label style={{ fontSize:11, fontWeight:800, color:'var(--txt2)' }}>{row.l}</label>
                   <span style={{ fontWeight: 800 }}>{draftT[row.k as keyof Thresholds]}</span>
                 </div>
-                <input type="range" min="1" max="25" style={{ width:'100%', cursor: 'pointer' }} value={draftT[row.k as keyof Thresholds]} onChange={e => setDraftT({...draftT, [row.k]: parseInt(e.target.value)})} />
+                <input 
+                  type="range" 
+                  min="1" 
+                  max="25" 
+                  style={{ width:'100%', cursor: 'pointer' }} 
+                  value={draftT[row.k as keyof Thresholds]} 
+                  onChange={e => setDraftT({...draftT, [row.k]: parseInt(e.target.value)})} 
+                />
               </div>
             ))}
-            <button className="btn btn-primary" style={{ width:'100%', marginTop:10, cursor: 'pointer' }} onClick={() => { setThresholds(draftT); localStorage.setItem('workload-thresholds', JSON.stringify(draftT)); setShowSettings(false); }}>Save Configurations</button>
+            <button 
+              className="btn btn-primary" 
+              style={{ width:'100%', marginTop:10, cursor: 'pointer' }} 
+              onClick={() => { 
+                setThresholds(draftT); 
+                localStorage.setItem('workload-thresholds', JSON.stringify(draftT)); 
+                setShowSettings(false); 
+              }}
+            >
+              Save Configurations
+            </button>
           </div>
         </div>
       )}

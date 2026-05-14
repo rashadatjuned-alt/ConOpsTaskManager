@@ -16,10 +16,12 @@ export default function AppShell({ children, title }: { children: React.ReactNod
   const [me, setMe] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [unreadCount, setUnreadCount] = useState(0)
   
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [showNotificationModal, setShowNotificationModal] = useState(false)
 
+  // Fetch profile + initial unread count
   useEffect(() => {
     const savedTheme = (localStorage.getItem('app-theme') as 'dark' | 'light') || 'dark'
     setTheme(savedTheme)
@@ -27,13 +29,66 @@ export default function AppShell({ children, title }: { children: React.ReactNod
 
     const getProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/auth'); return }
-      const { data } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
-      setMe({ ...data, email: session.user.email })
+      if (!session) { 
+        router.push('/auth'); 
+        return 
+      }
+
+      const { data: profile } = await supabase
+        .from('Users')
+        .select('*')
+        .eq('id', session.user.id)
+        .single()
+
+      setMe({ ...profile, email: session.user.email })
+
+      // Fetch initial unread count
+      if (session.user.id) {
+        const { count } = await supabase
+          .from('Notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', session.user.id)
+          .eq('is_read', false)
+        
+        setUnreadCount(count || 0)
+      }
+
       setLoading(false)
     }
     getProfile()
   }, [router])
+
+  // Realtime notifications listener
+  useEffect(() => {
+    if (!me?.id) return
+
+    const channel = supabase
+      .channel(`notifications-${me.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'Notifications',
+          filter: `user_id=eq.${me.id}`,
+        },
+        async (payload) => {
+          // Refresh unread count on any change
+          const { count } = await supabase
+            .from('Notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', me.id)
+            .eq('is_read', false)
+          
+          setUnreadCount(count || 0)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [me?.id])
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
@@ -107,7 +162,6 @@ export default function AppShell({ children, title }: { children: React.ReactNod
               <Link href="/admin/users" className={`nav-item ${isActive('/admin/users') ? 'active' : ''}`}>
                 <Users size={18} /> <span>User Management</span>
               </Link>
-              {/* RESTORED: Notification Management Link */}
               <Link href="/admin/notifications" className={`nav-item ${isActive('/admin/notifications') ? 'active' : ''}`}>
                 <Settings size={18} /> <span>Notification Management</span>
               </Link>
@@ -124,9 +178,36 @@ export default function AppShell({ children, title }: { children: React.ReactNod
             </div>
           </div>
           <div className="footer-actions">
-            <button onClick={() => setShowNotificationModal(true)} className="icon-btn" title="Notifications">
+            {/* Notification Button with Unread Badge */}
+            <button 
+              onClick={() => setShowNotificationModal(true)} 
+              className="icon-btn" 
+              title="Notifications"
+              style={{ position: 'relative' }}
+            >
               <Bell size={16} />
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  background: '#EF4444',
+                  color: 'white',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid var(--bg)'
+                }}>
+                  {unreadCount}
+                </span>
+              )}
             </button>
+
             <button onClick={toggleTheme} className="icon-btn" title="Toggle Theme">
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
@@ -144,7 +225,11 @@ export default function AppShell({ children, title }: { children: React.ReactNod
       </main>
 
       <PasswordModal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
-      <NotificationModal isOpen={showNotificationModal} onClose={() => setShowNotificationModal(false)} userId={me?.id} />
+      <NotificationModal 
+        isOpen={showNotificationModal} 
+        onClose={() => setShowNotificationModal(false)} 
+        userId={me?.id} 
+      />
 
       <style jsx>{`
         .app-layout { display: flex; min-height: 100vh; background: var(--bg3); }
@@ -167,7 +252,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .name { font-size: 13px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .role { font-size: 9px; color: var(--txt3); font-weight: 800; text-transform: uppercase; }
         .footer-actions { display: flex; gap: 8px; }
-        .icon-btn { flex: 1; background: var(--bg2); border: 1px solid var(--brd2); color: var(--txt2); padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+        .icon-btn { flex: 1; background: var(--bg2); border: 1px solid var(--brd2); color: var(--txt2); padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justifyContent: 'center'; position: relative; }
         .icon-btn:hover { color: var(--txt); border-color: var(--txt3); }
         .logout { font-size: 11px; font-weight: 700; text-transform: uppercase; }
         .main-content { margin-left: 260px; flex: 1; display: flex; flex-direction: column; }

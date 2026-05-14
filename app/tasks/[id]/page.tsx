@@ -27,10 +27,20 @@ function nextRecurrence(start: string, end: string, type: string) {
   return { start: newStart, end: newEnd }
 }
 
+// Helper to get initials for avatars
+const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?'
+
+// Helper for status pills
+const getPillClass = (status: string) => {
+  if (status === 'In Progress') return 'pill-ip'
+  if (status === 'On-Hold') return 'pill-oh'
+  if (status === 'Completed') return 'pill-c'
+  return 'pill-ns'
+}
+
 export default function TaskDetail({ params }: TaskDetailProps) {
   const router   = useRouter()
   
-  // Next.js 16: Unwrap the params promise
   const resolvedParams = use(params)
   const id = resolvedParams.id
 
@@ -47,7 +57,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
   const [success,      setSuccess]      = useState('')
   const [loading,      setLoading]      = useState(true)
 
-  // Local edit states
   const [editTask,     setEditTask]     = useState<any>(null)
   const [editSubtasks, setEditSubtasks] = useState<any[]>([])
   const [resources,    setResources]    = useState<Resource[]>([])
@@ -58,12 +67,10 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     const { data: me } = await supabase.from('Users').select('*').eq('id', session.user.id).single()
     setMyRole(me?.role || 'Team Member')
 
-    // Fetch master list of users to draw names contextually
     const { data: usersData } = await supabase.from('Users').select('id,full_name,role')
     const filteredUsers = (usersData || []).filter((u: any) => u.role !== 'Admin')
     setAllUsers(filteredUsers)
 
-    // Parallel fetch: Parent task data, task assignees rows, child subtasks data, subtask assignees rows
     const [taskRes, taskAssigneesRes, subtasksRes, subtaskAssigneesRes] = await Promise.all([
       supabase.from('Tasks').select('*').eq('id', id).single(),
       supabase.from('task_assignees').select('user_id').eq('task_id', id),
@@ -75,13 +82,11 @@ export default function TaskDetail({ params }: TaskDetailProps) {
 
     const activeTaskAssigneeIds = (taskAssigneesRes.data || []).map(ta => ta.user_id)
     
-    // Construct task state payload with direct relationally loaded assignee array
     const hydratedTask = {
       ...taskRes.data,
       assignees: activeTaskAssigneeIds
     }
 
-    // Map subtasks to inject their relationally active assignee arrays natively
     const hydratedSubtasks = (subtasksRes.data || []).map(sub => {
       const activeSubAssigneeIds = (subtaskAssigneesRes.data || [])
         .filter(sa => sa.subtask_id === sub.id)
@@ -96,7 +101,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     setSubtasks(hydratedSubtasks)
     setResources(Array.isArray(hydratedTask.resources) ? hydratedTask.resources : [])
 
-    // Fetch localized project team pool based on the new project_id reference
     if (hydratedTask.project_id) {
       const { data: pm } = await supabase.from('project_members').select('user_id').eq('project_id', hydratedTask.project_id)
       if (pm && pm.length > 0) {
@@ -141,12 +145,11 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     setTask(updated)
     await supabase.from('Tasks').update({ status: newStatus }).eq('id', id)
 
-    // Handle automated generation of subsequent recurring instance templates
     if (newStatus === 'Completed' && task.type !== 'One-time') {
       const { start, end } = nextRecurrence(task.start_date, task.end_date, task.type)
       const { data: newTask } = await supabase.from('Tasks').insert({
         project_id: task.project_id,
-        project_name: task.project_name, // Kept to support layout references if any
+        project_name: task.project_name,
         topic: task.topic,
         description: task.description,
         type: task.type,
@@ -158,7 +161,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
       }).select().single()
 
       if (newTask) {
-        // Cascade master task allocations to the new instance
         if (task.assignees && task.assignees.length > 0) {
           const newAssigneesPayload = task.assignees.map((userId: string) => ({
             task_id: newTask.id,
@@ -167,7 +169,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
           await supabase.from('task_assignees').insert(newAssigneesPayload)
         }
 
-        // Cascade subtask definitions and assignments relationally
         for (const sub of subtasks) {
           const { data: newSub } = await supabase.from('Subtasks').insert({
             parent_task_id: newTask.id,
@@ -208,7 +209,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     }
 
     try {
-      // 1. Update Core Task Properties
       await supabase.from('Tasks').update({
         topic: editTask.topic.trim(),
         description: editTask.description?.trim() || '',
@@ -219,14 +219,12 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         resources: resources,
       }).eq('id', id)
 
-      // 2. Re-synchronize Task Assignments inside Junction Table
       await supabase.from('task_assignees').delete().eq('task_id', id)
       if (editTask.assignees && editTask.assignees.length > 0) {
         const insertPayload = editTask.assignees.map((uid: string) => ({ task_id: id, user_id: uid }))
         await supabase.from('task_assignees').insert(insertPayload)
       }
 
-      // 3. Process Child Subtask Modifications & Assignment Chains
       for (const s of editSubtasks) {
         const payload = {
           topic: s.topic.trim(),
@@ -243,7 +241,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
           targetSubtaskId = newSub.id
         } else {
           await supabase.from('Subtasks').update(payload).eq('id', s.id)
-          // Wipe previous sub-allocations before updating rows
           await supabase.from('subtask_assignees').delete().eq('subtask_id', s.id)
         }
 
@@ -304,7 +301,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
   const handleDelete = async () => {
     if (!confirm(`Delete "${task.topic}"? This cannot be undone.`)) return
     setDeleting(true)
-    // ON DELETE CASCADE automatically handles wiping subtasks, task_assignees, and subtask_assignees
     await supabase.from('Tasks').delete().eq('id', id)
     router.back()
   }
@@ -314,7 +310,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
       const cur: string[] = prev.assignees || []
       const next = cur.includes(userId) ? cur.filter(id => id !== userId) : [...cur, userId]
       
-      // Cascade clear child allocations if rolled off main task scope
       if (cur.includes(userId)) {
         setEditSubtasks(subs => subs.map(s => ({
           ...s, assignees: (s.assignees || []).filter((id: string) => id !== userId)
@@ -361,363 +356,392 @@ export default function TaskDetail({ params }: TaskDetailProps) {
 
   return (
     <AppShell title={task.topic || 'Task Detail'}>
+      
+      {/* ── STRUCTURAL CSS (No hardcoded colors, inherits from globals.css) ── */}
       <style dangerouslySetInnerHTML={{ __html: `
-        .tv-wrapper {
-          --bg-color: transparent;
-          --card-bg: #ffffff;
-          --subtask-bg: #f3f4f6;
-          --border-color: #e5e7eb;
-          --text-main: #111827;
-          --text-muted: #6b7280;
-          --text-label: #4b5563;
-          --pill-blue-bg: #eff6ff;
-          --pill-blue-txt: #2563eb;
-          --pill-gray-bg: #f3f4f6;
-          --pill-gray-txt: #4b5563;
-          --btn-bg: #ffffff;
-          --btn-hover: #f3f4f6;
-          --btn-delete-bg: #fef2f2;
-          --btn-delete-txt: #ef4444;
-          --btn-delete-hover: #fee2e2;
-          --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
-          --arrow-blue: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%232563eb%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-          --arrow-gray: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%234b5563%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+        .fm-wrapper {
+          --r: 6px; 
+          --rl: 10px;
+          color: var(--txt);
         }
-        .dark .tv-wrapper, [data-theme="dark"] .tv-wrapper {
-          --bg-color: transparent;
-          --card-bg: #1e1e1e;
-          --subtask-bg: #181818;
-          --border-color: #2e2e2e;
-          --text-main: #e5e5e5;
-          --text-muted: #8b8b8b;
-          --text-label: #6b6b6b;
-          --pill-blue-bg: rgba(59, 130, 246, 0.15);
-          --pill-blue-txt: #60a5fa;
-          --pill-gray-bg: rgba(255, 255, 255, 0.05);
-          --pill-gray-txt: #a3a3a3;
-          --btn-bg: #2a2a2a;
-          --btn-hover: #333333;
-          --btn-delete-bg: rgba(239, 68, 68, 0.1);
-          --btn-delete-txt: #ef4444;
-          --btn-delete-hover: rgba(239, 68, 68, 0.2);
-          --shadow-sm: none;
-        }
-        .tv-wrapper { color: var(--text-main); font-size: 14px; display: flex; flex-direction: column; gap: 20px; }
-        .tv-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 12px; }
-        .tv-back-nav { color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 8px; cursor: pointer; background: none; border: none; font-size: 14px; }
-        .tv-actions { display: flex; gap: 10px; align-items: center; }
-        .tv-btn { background-color: var(--btn-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm); transition: 0.2s; }
-        .tv-btn:hover { background-color: var(--btn-hover); }
-        .tv-btn-primary { background-color: var(--text-main); color: var(--card-bg); }
-        .tv-btn-danger { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); border-color: transparent; }
         
-        .tv-status-select { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); border: 1px solid transparent; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; outline: none; appearance: none; padding-right: 24px; background-image: var(--arrow-blue); background-repeat: no-repeat; background-position: right 10px top 50%; background-size: 8px auto; }
-        .tv-status-sub { background-color: var(--pill-gray-bg); color: var(--pill-gray-txt); background-image: var(--arrow-gray); padding: 4px 10px; padding-right: 20px; font-size: 11px; }
-        .tv-status-sub.in-progress { background-color: var(--pill-blue-bg); color: var(--pill-blue-txt); background-image: var(--arrow-blue); }
-
-        .tv-card { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; box-shadow: var(--shadow-sm); }
-        .tv-section-title { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-        .tv-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
-        .tv-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-        .tv-field { display: flex; flex-direction: column; gap: 6px; }
-        .tv-label { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; letter-spacing: 0.05em; }
-        .tv-val { font-size: 14px; color: var(--text-main); }
-        .tv-input { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; }
-        .tv-textarea { width: 100%; padding: 8px 12px; background: transparent; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 14px; outline: none; min-height: 80px; resize: vertical; }
-        .tv-table { width: 100%; border-collapse: collapse; text-align: left; }
-        .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--text-label); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
-        .tv-table td { font-size: 13px; color: var(--text-main); padding: 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+        /* Cards */
+        .card { background: var(--bg); border: 1px solid var(--brd); border-radius: var(--rl); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--shd); }
+        .sec { font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; color: var(--txt3); padding-bottom: 10px; border-bottom: 1px solid var(--brd); margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
+        .sec-lbl { font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; color: var(--txt3); }
         
-        .tv-action-col { width: 80px; text-align: right; }
-        .tv-icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; margin-left: 8px; transition: 0.2s; }
-        .tv-icon-btn:hover { color: var(--btn-delete-txt); }
+        /* Buttons */
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--r); border: 1px solid var(--brd2); background: var(--bg); color: var(--txt2); font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; text-decoration: none; }
+        .btn:hover { background: var(--bg2); }
+        .btn-primary { background: var(--txt2); color: var(--bg); border-color: var(--txt2); }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        .btn-delete { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 10px; background: var(--del-bg); color: var(--del-txt); border: 1px solid var(--del-brd); border-radius: var(--r); cursor: pointer; font-size: 11px; font-weight: 700; transition: .15s; }
         
-        .tv-chip-container { display: flex; gap: 8px; flex-wrap: wrap; }
-        .tv-chip { background: var(--btn-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 4px 10px; font-size: 12px; color: var(--text-main); transition: 0.2s; cursor: pointer; }
-        .tv-chip.selected { background-color: var(--text-main); color: var(--card-bg); border-color: var(--text-main); }
-        .tv-alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
-        .tv-alert-error { background-color: var(--btn-delete-bg); color: var(--btn-delete-txt); }
-        .tv-alert-success { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; }
-        .tv-alert-info { background-color: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+        /* Pills */
+        .pill { font-size: 9px; font-weight: 800; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+        .pill-ns { background: var(--pill-ns-bg); color: var(--pill-ns-txt); }
+        .pill-ip { background: var(--pill-ip-bg); color: var(--pill-ip-txt); }
+        .pill-oh { background: var(--pill-oh-bg); color: var(--pill-oh-txt); }
+        .pill-c { background: var(--pill-c-bg); color: var(--pill-c-txt); }
+        
+        /* Form */
+        .fl { font-size: 10px; font-weight: 800; color: var(--txt3); text-transform: uppercase; letter-spacing: .12em; display: block; margin-bottom: 5px; }
+        .fi, .fsel { width: 100%; padding: 7px 10px; border: 1px solid var(--brd2); border-radius: var(--r); background: var(--bg); color: var(--txt); font-size: 13px; font-weight: 500; outline: none; }
+        .fta { width: 100%; padding: 7px 10px; border: 1px solid var(--brd2); border-radius: var(--r); background: var(--bg); color: var(--txt); font-size: 13px; font-weight: 500; outline: none; min-height: 60px; resize: vertical; }
+        .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .fg { margin-bottom: 12px; }
+        
+        /* Status toggle row */
+        .status-row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .sopt { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--brd2); cursor: pointer; font-size: 11px; font-weight: 700; background: transparent; color: var(--txt2); transition: .15s; }
+        .sopt.sel-ns { background: var(--pill-ns-bg); color: var(--pill-ns-txt); border-color: var(--pill-ns-txt); }
+        .sopt.sel-ip { background: var(--pill-ip-bg); color: var(--pill-ip-txt); border-color: var(--pill-ip-txt); }
+        .sopt.sel-oh { background: var(--pill-oh-bg); color: var(--pill-oh-txt); border-color: var(--pill-oh-txt); }
+        .sopt.sel-c { background: var(--pill-c-bg); color: var(--pill-c-txt); border-color: var(--pill-c-txt); }
+        
+        /* Toggle member chips */
+        .tgl { padding: 3px 11px; font-size: 12px; font-weight: 600; border-radius: 20px; border: 1px solid var(--brd2); cursor: pointer; background: transparent; color: var(--txt2); transition: .15s; white-space: nowrap; }
+        .tgl.on { background: var(--txt2); color: var(--bg); border-color: var(--txt2); }
+        
+        /* Two col */
+        .two-col { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
+        @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+        
+        /* Avatar */
+        .av { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; border: 2px solid var(--bg); flex-shrink: 0; background: var(--bg2); color: var(--txt); }
+        
+        /* Block draft (Subtasks/Resources) */
+        .block-draft { background: var(--bg3); border: 1px solid var(--brd); border-radius: var(--r); padding: 14px; margin-bottom: 10px; }
+        .block-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .block-lbl { font-size: 10px; font-weight: 800; color: var(--txt3); text-transform: uppercase; letter-spacing: .12em; }
+        
+        /* Summary rows */
+        .sum-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--brd); font-size: 12px; }
+        .sum-row:last-child { border-bottom: none; }
+        .sum-lbl { font-size: 10px; font-weight: 800; color: var(--txt3); text-transform: uppercase; letter-spacing: .1em; }
+        .sum-val { font-size: 12px; color: var(--txt2); font-weight: 600; }
+        
+        /* Resource row */
+        .res-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--brd); border-radius: var(--r); margin-bottom: 8px; }
+        
+        /* Alerts */
+        .alert-info { padding: 10px 14px; background: var(--pill-oh-bg); color: var(--pill-oh-txt); border-left: 3px solid var(--pill-oh-txt); font-size: 13px; margin-bottom: 14px; }
+        .alert-error { padding: 10px 14px; background: var(--del-bg); color: var(--del-txt); border-left: 3px solid var(--del-brd); font-size: 13px; margin-bottom: 14px; }
+        .alert-success { padding: 10px 14px; background: var(--pill-c-bg); color: var(--pill-c-txt); border-left: 3px solid var(--pill-c-txt); font-size: 13px; margin-bottom: 14px; }
       `}} />
 
-      <div className="tv-wrapper">
-        <div className="tv-top-bar">
-          <button className="tv-back-nav" onClick={() => router.back()}>
-            <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"></path></svg>
+      <div className="fm-wrapper">
+        
+        {/* Toolbar */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18, flexWrap:'wrap', gap:10 }}>
+          <button className="btn" onClick={() => router.back()}>
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"></path></svg> 
             Back
           </button>
           
-          <div className="tv-actions">
-            <select 
-              className="tv-status-select"
-              value={editing ? editTask.status : task.status}
-              onChange={e => editing ? setEditTask((p: any) => ({ ...p, status: e.target.value })) : handleStatusChange(e.target.value)}
-            >
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
-
-            <button className="tv-btn" onClick={handleClone} disabled={cloning}>Clone</button>
-
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             {!editing ? (
-              <button className="tv-btn" onClick={startEdit}>✎ Edit</button>
+              <>
+                <button className="btn btn-sm" onClick={startEdit}>✎ Edit</button>
+                <button className="btn btn-sm" onClick={handleClone} disabled={cloning}>Clone</button>
+                {canManage && <button className="btn-delete btn-sm" onClick={handleDelete} disabled={deleting}>🗑 Delete</button>}
+              </>
             ) : (
               <>
-                <button className="tv-btn tv-btn-primary" onClick={handleSave} disabled={saving}>💾 Save</button>
-                <button className="tv-btn" onClick={cancelEdit}>Cancel</button>
+                <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={saving}>💾 Save</button>
+                <button className="btn btn-sm" onClick={cancelEdit}>Cancel</button>
               </>
             )}
-
-            {canManage && !editing && (
-              <button className="tv-btn tv-btn-danger" onClick={handleDelete} disabled={deleting}>🗑 Delete</button>
-            )}
           </div>
         </div>
 
-        {error   && <div className="tv-alert tv-alert-error">{error}</div>}
-        {success && <div className="tv-alert tv-alert-success">{success}</div>}
-        {isRecurring && <div className="tv-alert tv-alert-info">🔄 <strong>{task.type} recurring task</strong></div>}
+        {error && <div className="alert-error">{error}</div>}
+        {success && <div className="alert-success">{success}</div>}
+        {isRecurring && <div className="alert-info">🔄 <strong>{task.type} recurring task</strong> — When marked Completed, the next instance will be auto-created with dates shifted forward.</div>}
 
-        {/* ── 1. TASK DETAILS ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">Task Details</div>
-          <div className="tv-grid-2">
-            <div className="tv-field">
-              <span className="tv-label">Task Title *</span>
-              {editing 
-                ? <input className="tv-input" value={editTask.topic || ''} onChange={e => setEditTask((p: any) => ({ ...p, topic: e.target.value }))} />
-                : <span className="tv-val">{task.topic}</span>
-              }
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">Project</span>
-              <span className="tv-val">{task.project_name || '—'}</span>
-            </div>
-          </div>
+        <div className="two-col">
+          {/* LEFT COLUMN */}
+          <div>
+            
+            {/* Task Details */}
+            <div className="card">
+              <div className="sec"><span className="sec-lbl">Task details</span></div>
+              
+              <div className="fg">
+                <label className="fl">Task title *</label>
+                {!editing ? (
+                  <div className="fi" style={{ color: 'var(--txt)' }}>{task.topic}</div>
+                ) : (
+                  <input className="fi" value={editTask.topic || ''} onChange={e => setEditTask((p: any) => ({ ...p, topic: e.target.value }))} />
+                )}
+              </div>
 
-          <div className="tv-field" style={{ marginBottom: 20 }}>
-            <span className="tv-label">Description</span>
-            {editing
-              ? <textarea className="tv-textarea" value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
-              : <span className="tv-val" style={{ whiteSpace: 'pre-wrap' }}>{task.description || 'No description.'}</span>
-            }
-          </div>
+              <div className="g2" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="fl">Project</label>
+                  <div style={{ fontSize: 13, color: 'var(--txt2)', display: 'flex', alignItems: 'center', gap: 5, paddingTop: 4 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--txt2)' }}></div>
+                    {task.project_name || '—'}
+                  </div>
+                </div>
+                <div>
+                  <label className="fl">Task type</label>
+                  {!editing ? (
+                    <div style={{ fontSize: 13, color: 'var(--txt2)', paddingTop: 4 }}>{task.type}</div>
+                  ) : (
+                    <select className="fsel" value={editTask.type || 'One-time'} onChange={e => setEditTask((p: any) => ({ ...p, type: e.target.value }))}>
+                      {TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  )}
+                </div>
+              </div>
 
-          <div className="tv-grid-4">
-            <div className="tv-field">
-              <span className="tv-label">Start Date</span>
-              {editing
-                ? <input type="date" className="tv-input" value={editTask.start_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, start_date: e.target.value }))} />
-                : <span className="tv-val">{task.start_date || '—'}</span>
-              }
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">End Date</span>
-              {editing
-                ? <input type="date" className="tv-input" value={editTask.end_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, end_date: e.target.value }))} />
-                : <span className="tv-val">{task.end_date || '—'}</span>
-              }
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">Type</span>
-              {editing
-                ? <select className="tv-input" value={editTask.type || 'One-time'} onChange={e => setEditTask((p: any) => ({ ...p, type: e.target.value }))}>{TYPES.map(t => <option key={t}>{t}</option>)}</select>
-                : <span className="tv-val">{task.type}</span>
-              }
-            </div>
-          </div>
-        </div>
+              <div className="g2" style={{ marginBottom: 12 }}>
+                <div>
+                  <label className="fl">Start date</label>
+                  {!editing ? (
+                    <div style={{ fontSize: 13, color: 'var(--txt2)', paddingTop: 4 }}>{task.start_date || '—'}</div>
+                  ) : (
+                    <input type="date" className="fi" value={editTask.start_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, start_date: e.target.value }))} />
+                  )}
+                </div>
+                <div>
+                  <label className="fl">End date</label>
+                  {!editing ? (
+                    <div style={{ fontSize: 13, color: 'var(--txt2)', paddingTop: 4 }}>{task.end_date || '—'}</div>
+                  ) : (
+                    <input type="date" className="fi" value={editTask.end_date || ''} onChange={e => setEditTask((p: any) => ({ ...p, end_date: e.target.value }))} />
+                  )}
+                </div>
+              </div>
 
-        {/* ── 2. ASSIGNED TO ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">
-            Assigned To
-            {editing && task.project_name && <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>
-              Showing members from {task.project_name}
-            </span>}
-          </div>
-          <div className="tv-chip-container">
-            {editing ? (
-              projectTeam.length === 0 ? (
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No members found.</span>
-              ) : (
-                projectTeam.map((u: any) => {
-                  const sel = editAssignees.includes(u.id)
-                  return (
-                    <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)} className={`tv-chip ${sel ? 'selected' : ''}`}>
-                      {sel ? '✓ ' : ''}{u.full_name}
-                    </button>
+              <div className="fg" style={{ marginBottom: 12 }}>
+                <label className="fl">Status</label>
+                {!editing ? (
+                  <span className={`pill ${getPillClass(task.status)}`}>{task.status}</span>
+                ) : (
+                  <div className="status-row">
+                    {STATUSES.map(s => {
+                      const isSel = editTask.status === s
+                      let selClass = ''
+                      if (isSel) {
+                        if (s === 'Not Started') selClass = 'sel-ns'
+                        if (s === 'In Progress') selClass = 'sel-ip'
+                        if (s === 'On-Hold') selClass = 'sel-oh'
+                        if (s === 'Completed') selClass = 'sel-c'
+                      }
+                      return (
+                        <button key={s} className={`sopt ${selClass}`} onClick={() => setEditTask((p: any) => ({ ...p, status: s }))}>
+                          {s}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="fg">
+                <label className="fl">Description</label>
+                {!editing ? (
+                  <div style={{ fontSize: 13, color: 'var(--txt2)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                    {task.description || 'No description provided.'}
+                  </div>
+                ) : (
+                  <textarea className="fta" value={editTask.description || ''} onChange={e => setEditTask((p: any) => ({ ...p, description: e.target.value }))} />
+                )}
+              </div>
+            </div>
+
+            {/* Assigned to */}
+            <div className="card">
+              <div className="sec"><span className="sec-lbl">Assigned to</span></div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {editing ? (
+                  projectTeam.length === 0 ? (
+                    <span style={{ fontSize: 13, color: 'var(--txt3)' }}>No members found.</span>
+                  ) : (
+                    projectTeam.map((u: any) => {
+                      const sel = editAssignees.includes(u.id)
+                      return (
+                        <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)} className={`tgl ${sel ? 'on' : ''}`}>
+                          {sel ? '✓ ' : ''}{u.full_name}
+                        </button>
+                      )
+                    })
                   )
-                })
-              )
-            ) : (
-              (task.assignees || []).length === 0 ? (
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No members assigned.</span>
-              ) : (
-                task.assignees.map((uid: string) => {
-                  const uObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
-                  return <div key={uid} className="tv-chip">{uObj ? uObj.full_name : 'Unknown User'}</div>
-                })
-              )
-            )}
-          </div>
-        </div>
+                ) : (
+                  (task.assignees || []).length === 0 ? (
+                    <span style={{ fontSize: 13, color: 'var(--txt3)' }}>No members assigned.</span>
+                  ) : (
+                    task.assignees.map((uid: string) => {
+                      const uObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
+                      return <span key={uid} className="tgl on" style={{ cursor: 'default' }}>{uObj ? uObj.full_name : 'Unknown User'}</span>
+                    })
+                  )
+                )}
+              </div>
+            </div>
 
-        {/* ── 3. RESOURCES ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">
-            Resources
-            {editing && <button className="tv-btn" onClick={addResource}>＋ Add</button>}
-          </div>
-          {resources.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 13, color: 'var(--text-muted)' }}>No resources attached.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 50 }}>SL</th>
-                  <th>Description</th>
-                  <th>Link</th>
-                  {editing && <th className="tv-action-col">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {resources.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.sl}</td>
-                    <td>
-                      {editing 
-                        ? <input className="tv-input" style={{ padding: '6px 10px' }} placeholder="Resource name..." value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} /> 
-                        : <span>{r.title || '—'}</span>
-                      }
-                    </td>
-                    <td>
-                      {editing 
-                        ? <input className="tv-input" style={{ padding: '6px 10px' }} placeholder="https://..." value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} /> 
-                        : <a href={r.link} target="_blank" rel="noreferrer" style={{ color: 'var(--pill-blue-txt)', textDecoration: 'underline' }}>{r.link || '—'}</a>
-                      }
-                    </td>
-                    {editing && (
-                      <td className="tv-action-col">
-                        <button className="tv-icon-btn" onClick={() => removeResource(i)}>✕</button>
-                      </td>
+            {/* Subtasks */}
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div className="sec-lbl">Subtasks ({editing ? editSubtasks.length : subtasks.length})</div>
+                {editing && <button className="btn btn-primary btn-sm" onClick={addSubtask}>＋ Add Subtask</button>}
+              </div>
+
+              {(!editing ? subtasks : editSubtasks).map((s: any, i: number) => (
+                <div key={s.id} className="block-draft">
+                  <div className="block-hdr">
+                    <span className="block-lbl">Subtask {i + 1}</span>
+                    {!editing ? (
+                      <span className={`pill ${getPillClass(s.status)}`}>{s.status}</span>
+                    ) : (
+                      <button className="btn-delete" onClick={() => removeSub(s)}>🗑 Remove</button>
                     )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                  </div>
 
-        {/* ── 4. SUBTASKS ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">
-            Subtasks
-            {editing && <button className="tv-btn" onClick={addSubtask}>＋ Add Subtask</button>}
-          </div>
-          {(!editing && subtasks.length === 0) || (editing && editSubtasks.length === 0) ? (
-            <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 13, color: 'var(--text-muted)' }}>No subtasks yet.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>SL</th>
-                  <th style={{ width: '35%' }}>Title & Description</th>
-                  <th>Start Date</th>
-                  <th>End Date</th>
-                  <th>Assigned To</th>
-                  <th>Status</th>
-                  {editing && <th className="tv-action-col">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(editing ? editSubtasks : subtasks).map((s, i) => {
-                  return (
-                    <tr key={s.id}>
-                      <td><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>#{i + 1}</span></td>
-                      <td>
-                        {editing ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <input className="tv-input" style={{ padding: '6px 10px' }} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} placeholder="Title..." />
-                            <textarea className="tv-textarea" style={{ padding: '6px 10px', minHeight: 40 }} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Description..." />
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontWeight: 500 }}>{s.topic}</span>
-                            {s.description && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.description}</span>}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {editing 
-                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
-                          : <span>{s.start_date || '—'}</span>
-                        }
-                      </td>
-                      <td>
-                        {editing 
-                          ? <input type="date" className="tv-input" style={{ padding: '6px 10px' }} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
-                          : <span>{s.end_date || '—'}</span>
-                        }
-                      </td>
-                      <td>
-                        <div className="tv-chip-container" style={{ gap: 4 }}>
-                          {editing ? (
-                            editAssignees.length === 0 ? (
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Assign task first</span>
-                            ) : (
+                  {!editing ? (
+                    <>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 4 }}>{s.topic}</div>
+                      {s.description && <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 8 }}>{s.description}</div>}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--txt3)', marginTop: 10 }}>
+                        <span>{s.start_date || '?'} → {s.end_date || '?'}</span>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {s.assignees && s.assignees.map((uid: string) => {
+                            const uObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
+                            return (
+                              <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <div className="av" style={{ width: 18, height: 18, fontSize: 8 }}>{getInitials(uObj?.full_name)}</div>
+                                <span>{uObj ? uObj.full_name.split(' ')[0] : 'User'}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="fg">
+                        <label className="fl">Title *</label>
+                        <input className="fi" value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} />
+                      </div>
+                      <div className="fg">
+                        <label className="fl">Description</label>
+                        <textarea className="fta" style={{ minHeight: 46 }} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} />
+                      </div>
+                      <div className="g2" style={{ gap: 8, marginBottom: 10 }}>
+                        <div><label className="fl">Start date</label><input type="date" className="fi" value={s.start_date || ''} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} /></div>
+                        <div><label className="fl">End date</label><input type="date" className="fi" value={s.end_date || ''} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} /></div>
+                      </div>
+                      <div className="g2" style={{ gap: 8 }}>
+                        <div>
+                          <label className="fl">Assign to</label>
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+                            {editAssignees.length === 0 ? <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Assign main task first</span> : 
                               editAssignees.map(uid => {
-                                const userObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
+                                const uObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
                                 const sel = (s.assignees || []).includes(uid)
                                 return (
-                                  <button key={uid} type="button" onClick={() => toggleSubAssignee(String(s.id), uid)} className={`tv-chip ${sel ? 'selected' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }}>
-                                    {sel ? '✓ ' : ''}{userObj ? userObj.full_name.split(' ')[0] : 'Unknown'}
+                                  <button key={uid} type="button" onClick={() => toggleSubAssignee(String(s.id), uid)} className={`tgl ${sel ? 'on' : ''}`} style={{ fontSize: 11, padding: '2px 10px' }}>
+                                    {sel ? '✓ ' : ''}{uObj ? uObj.full_name.split(' ')[0] : 'User'}
                                   </button>
                                 )
                               })
-                            )
-                          ) : (
-                            (s.assignees || []).length === 0 ? (
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
-                            ) : (
-                              s.assignees.map((uid: string) => {
-                                const userObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
-                                return (
-                                  <div key={uid} className="tv-chip" style={{ fontSize: 11, padding: '2px 8px' }}>
-                                    {userObj ? userObj.full_name.split(' ')[0] : 'User'}
-                                  </div>
-                                )
-                              })
-                            )
-                          )}
+                            }
+                          </div>
                         </div>
-                      </td>
-                      <td>
-                        {editing ? (
-                          <select 
-                            className={`tv-status-select tv-status-sub ${s.status === 'In Progress' ? 'in-progress' : ''}`}
-                            value={s.status} 
-                            onChange={e => updateSub(String(s.id), 'status', e.target.value)}
-                          >
+                        <div>
+                          <label className="fl">Status</label>
+                          <select className="fsel" value={s.status} onChange={e => updateSub(String(s.id), 'status', e.target.value)}>
                             {STATUSES.map(st => <option key={st}>{st}</option>)}
                           </select>
-                        ) : (
-                          <span className={`tv-status-select tv-status-sub ${s.status === 'In Progress' ? 'in-progress' : ''}`} style={{ pointerEvents: 'none' }}>
-                            {s.status}
-                          </span>
-                        )}
-                      </td>
-                      {editing && (
-                        <td className="tv-action-col">
-                          <button className="tv-icon-btn" onClick={() => removeSub(s)}>✕</button>
-                        </td>
-                      )}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              {(!editing && subtasks.length === 0) && <div style={{ fontSize: 12, color: 'var(--txt3)' }}>No subtasks available.</div>}
+            </div>
+
+            {/* Resources */}
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div className="sec-lbl">Resources ({resources.length})</div>
+                {editing && <button className="btn btn-primary btn-sm" onClick={addResource}>＋ Add Resource</button>}
+              </div>
+
+              {resources.map((r, i) => (
+                !editing ? (
+                  <div key={i} className="res-row">
+                    <svg style={{ marginTop: 2, flexShrink: 0, color: 'var(--txt3)' }} width="14" height="14" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M9 15l6 -6"></path><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"></path><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"></path></svg>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 3 }}>{r.title || `Resource ${i+1}`}</div>
+                      <a href={r.link} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--pill-ip-txt)', textDecoration: 'underline', wordBreak: 'break-all' }}>{r.link}</a>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={i} className="block-draft">
+                    <div className="block-hdr">
+                      <span className="block-lbl">Resource {i + 1}</span>
+                      <button className="btn-delete" onClick={() => removeResource(i)}>🗑 Remove</button>
+                    </div>
+                    <div className="fg">
+                      <label className="fl">Title *</label>
+                      <input className="fi" value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} />
+                    </div>
+                    <div className="fg" style={{ marginBottom: 0 }}>
+                      <label className="fl">Link</label>
+                      <input className="fi" value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://" />
+                    </div>
+                  </div>
+                )
+              ))}
+              {resources.length === 0 && !editing && <div style={{ fontSize: 12, color: 'var(--txt3)' }}>No resources attached.</div>}
+            </div>
+
+          </div>
+
+          {/* RIGHT COLUMN - SUMMARY */}
+          <div>
+            <div className="card">
+              <div className="sec-lbl" style={{ display: 'block', marginBottom: 14 }}>Task Info</div>
+              <div className="sum-row">
+                <span className="sum-lbl">Project</span>
+                <span className="sum-val" style={{ display: 'flex', alignItems: 'center', gap: 5 }}><div style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--txt2)' }}></div>{task.project_name || 'None'}</span>
+              </div>
+              <div className="sum-row">
+                <span className="sum-lbl">Type</span>
+                <span className="sum-val">{task.type} {isRecurring && <span className="pill" style={{ background: 'var(--pill-oh-bg)', color: 'var(--pill-oh-txt)', fontSize: 8 }}>↻ Recurring</span>}</span>
+              </div>
+              <div className="sum-row"><span className="sum-lbl">Start</span><span className="sum-val">{task.start_date || '—'}</span></div>
+              <div className="sum-row"><span className="sum-lbl">End</span><span className="sum-val">{task.end_date || '—'}</span></div>
+              <div className="sum-row"><span className="sum-lbl">Status</span><span className={`pill ${getPillClass(task.status)}`}>{task.status}</span></div>
+              
+              <div className="sum-row">
+                <span className="sum-lbl">Assigned</span>
+                <div style={{ display: 'flex', gap: 3 }}>
+                  {(task.assignees || []).map((uid: string) => {
+                    const uObj = projectTeam.find(u => u.id === uid) || allUsers.find(u => u.id === uid)
+                    return <div key={uid} className="av" style={{ width: 22, height: 22, fontSize: 9 }}>{getInitials(uObj?.full_name)}</div>
+                  })}
+                  {(!task.assignees || task.assignees.length === 0) && <span className="sum-val">—</span>}
+                </div>
+              </div>
+              <div className="sum-row">
+                <span className="sum-lbl">Subtasks</span>
+                <span className="sum-val">{subtasks.filter(s => s.status === 'Completed').length}/{subtasks.length} done</span>
+              </div>
+              <div className="sum-row"><span className="sum-lbl">Resources</span><span className="sum-val">{resources.length}</span></div>
+              
+              {isRecurring && task.start_date && task.end_date && task.type && (
+                <div className="sum-row">
+                  <span className="sum-lbl">Next instance</span>
+                  <span className="sum-val" style={{ color: 'var(--pill-c-txt)', fontWeight: 700 }}>{nextRecurrence(task.start_date, task.end_date, task.type).start}</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </AppShell>
