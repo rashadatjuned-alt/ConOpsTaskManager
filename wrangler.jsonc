@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "conopstaskmanager",
+  "name": "aged-haze-c8fa",
   "compatibility_date": "2026-05-12",
   "compatibility_flags": [
     "nodejs_compat"
