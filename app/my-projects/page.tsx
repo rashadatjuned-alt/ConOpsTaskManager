@@ -186,7 +186,7 @@ export default function MyProjects() {
     </div>
   )
 
-  // ── Grid card (your original structure) ───────────────────────────────────
+  // ── Grid card ─────────────────────────────────────────────────────────────
   const GridCard = ({ proj }: { proj: any }) => (
     <div
       className="proj-card"
@@ -235,16 +235,16 @@ export default function MyProjects() {
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <AvatarStack members={proj.activeMembers} size={22} />
-        {proj.end_date && (
+        {proj.endDate && (
           <span style={{ fontSize: 11, color: 'var(--txt3)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            📅 {proj.end_date}
+            📅 {proj.endDate}
           </span>
         )}
       </div>
     </div>
   )
 
-  // ── List row (your original structure) ────────────────────────────────────
+  // ── List row ──────────────────────────────────────────────────────────────
   const ListRow = ({ proj }: { proj: any }) => {
     const open     = expandedProj[proj.id]
     const projTasks = tasks.filter(
@@ -385,10 +385,10 @@ export default function MyProjects() {
         ))}
       </div>
 
-      {/* ── Toolbar (identical to My Tasks page) ── */}
+      {/* ── Toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
 
-        {/* Grid / List Toggle - identical style */}
+        {/* Grid / List Toggle */}
         <div className="view-toggle" style={{ background: 'var(--bg2)', padding: 3, borderRadius: 8 }}>
           <button className={`vb ${view === 'grid' ? 'on' : 'off'}`} onClick={() => setView('grid')}>
             <LayoutGrid size={14} /> Grid
@@ -398,7 +398,7 @@ export default function MyProjects() {
           </button>
         </div>
 
-        {/* Filters grouped on the right */}
+        {/* Filters */}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
           <div className="filter-pill">
             <Filter size={13} color="var(--txt3)" />
