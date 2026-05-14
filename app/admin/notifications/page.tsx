@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { Send, Settings, Activity, Save, CheckCircle2, AlertCircle, Clock, BellRing, Trash2 } from 'lucide-react'
+import { Send, Settings, Activity, Save, CheckCircle2, AlertCircle, Clock, BellRing, Trash2, Mail } from 'lucide-react'
 
 const NOTIFICATION_EVENTS = [
   { id: 1, name: 'New Task Created', desc: 'When a new task is created in a project', icon: '➕' },
@@ -16,6 +16,7 @@ const NOTIFICATION_EVENTS = [
   { id: 8, name: 'Task Completed', desc: 'When a task is marked Completed', icon: '✅' },
   { id: 9, name: 'Task Due Soon', desc: 'When a task deadline is approaching', icon: '⏰', days: 2 },
   { id: 10, name: 'Task Overdue', desc: 'When a task passes its deadline incomplete', icon: '⚠️' },
+  { id: 11, name: 'Email Broadcast', desc: 'Allow sending actual emails to the user inbox', icon: '📧' },
 ]
 
 export default function NotificationManagement() {
@@ -29,6 +30,7 @@ export default function NotificationManagement() {
   // Send States
   const [message, setMessage] = useState('')
   const [targetRole, setTargetRole] = useState('All')
+  const [sendEmail, setSendEmail] = useState(false)
   const [sending, setSending] = useState(false)
 
   // Load Database Info
@@ -58,21 +60,42 @@ export default function NotificationManagement() {
       return
     }
 
+    // 1. IN-APP NOTIFICATIONS
     const payload = recipients.map(u => ({
       user_id: u.id,
       message: message,
       is_read: false
     }))
-
     const { error } = await supabase.from('Notifications').insert(payload)
 
+    // 2. EXTERNAL EMAIL NOTIFICATIONS
+    if (sendEmail) {
+      try {
+        const validEmails = recipients.map(u => u.email).filter(Boolean)
+        if (validEmails.length > 0) {
+          await fetch('/api/email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              emails: validEmails, 
+              message: message 
+            })
+          })
+        }
+      } catch (err) {
+        console.error("Failed to send external emails:", err)
+        alert("In-app notifications sent, but external emails failed.")
+      }
+    }
+
     if (error) {
-      alert("Error sending notifications: " + error.message)
+      alert("Error sending in-app notifications: " + error.message)
     } else {
       setMessage('')
+      setSendEmail(false)
       alert(`Broadcast sent to ${recipients.length} members!`)
       loadData()
-      setActiveTab('Activity') // Auto switch to logs to see what was sent
+      setActiveTab('Activity') 
     }
     setSending(false)
   }
@@ -145,9 +168,6 @@ export default function NotificationManagement() {
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 8 }}>
-              This will send a popup alert to {targetRole === 'All' ? 'everyone' : `all ${targetRole}s`}.
-            </div>
           </div>
 
           <div style={{ marginBottom: 24 }}>
@@ -158,6 +178,20 @@ export default function NotificationManagement() {
               placeholder="Type your announcement here... e.g. 'Server maintenance at 5 PM!'"
               style={{ width: '100%', minHeight: 120, padding: 16, borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--brd)', color: 'var(--txt)', outline: 'none', resize: 'none', fontSize: 14 }}
             />
+          </div>
+
+          {/* EMAIL TOGGLE */}
+          <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input 
+              type="checkbox" 
+              id="emailToggle"
+              checked={sendEmail} 
+              onChange={e => setSendEmail(e.target.checked)}
+              style={{ width: 18, height: 18, accentColor: 'var(--nav-active-txt)', cursor: 'pointer' }}
+            />
+            <label htmlFor="emailToggle" style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Mail size={16} /> Also send as External Email
+            </label>
           </div>
 
           <button 

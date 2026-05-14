@@ -1,37 +1,68 @@
 'use client'
-
 export const dynamic = 'force-dynamic'
+
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { StatusDot } from '@/components/ui/StatusPill'
-import { 
-  Folder, Plus, LayoutGrid, Columns, ChevronRight, MoreVertical, Clock, X, Edit3 
+import {
+  Folder, LayoutGrid, Columns, Filter,
+  ChevronRight, Edit3, X,
 } from 'lucide-react'
 import Link from 'next/link'
 
-const PROJECT_STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed']
-const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
-const AVATAR_CL = ['#0C447C', '#27500A', '#3C3489', '#633806', '#712B13', '#085041']
-const PROJECT_COLORS = ['#3B82F6', '#8B5CF6', '#F59E0B', '#84CC16', '#EF4444', '#4D7C0F', '#B45309', '#0284C7', '#2DD4BF', '#EC4899']
+// ── Constants ─────────────────────────────────────────────────────────────
+const PROJECT_STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 
-function ini(name: string) {
-  const p = (name || 'User').trim().split(' ')
-  return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : (name || '?')[0].toUpperCase()
+const STATUS_DOT: Record<string, string> = {
+  'Not Started': '#aaaaaa',
+  'In Progress': '#378ADD',
+  'On-Hold':     '#EF9F27',
+  'Completed':   '#639922',
 }
 
+const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
+const AVATAR_CL = ['#0C447C', '#27500A', '#3C3489', '#633806', '#712B13', '#085041']
+
+const PROJECT_COLORS = [
+  '#3B82F6', '#8B5CF6', '#F59E0B', '#84CC16',
+  '#EF4444', '#4D7C0F', '#B45309', '#0284C7', '#2DD4BF', '#EC4899',
+]
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function ini(name: string) {
+  const p = (name || 'User').trim().split(' ')
+  return p.length >= 2
+    ? (p[0][0] + p[p.length - 1][0]).toUpperCase()
+    : (name || '?')[0].toUpperCase()
+}
+
+function PillStatus({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    'Not Started': 'pill-ns',
+    'In Progress': 'pill-ip',
+    'On-Hold':     'pill-oh',
+    'Completed':   'pill-c',
+  }
+  return <span className={`pill ${map[status] || 'pill-ns'}`}>{status}</span>
+}
+
+// ── Component ─────────────────────────────────────────────────────────────
 export default function MyProjects() {
   const router = useRouter()
-  const [projects, setProjects] = useState<any[]>([])
-  const [tasks, setTasks] = useState<any[]>([])
-  const [allUsers, setAllUsers] = useState<any[]>([])
-  
-  const [loading, setLoading] = useState(true)
-  const [myRole, setMyRole] = useState('user')
-  const [view, setView] = useState<'grid' | 'kanban'>('grid')
-  const [selectedProject, setSelectedProject] = useState<any | null>(null)
 
+  const [projects,       setProjects]       = useState<any[]>([])
+  const [tasks,          setTasks]           = useState<any[]>([])
+  const [allUsers,       setAllUsers]        = useState<any[]>([])
+  const [loading,        setLoading]         = useState(true)
+  const [myRole,         setMyRole]          = useState('Team Member')
+  const [view,           setView]            = useState<'grid' | 'list'>('grid')
+  const [statusFilter,   setStatusFilter]    = useState('All')
+  const [selectedProject, setSelectedProject] = useState<any | null>(null)
+  const [expandedProj,   setExpandedProj]   = useState<Record<string, boolean>>({})
+
+  // ── Data loading ─────────────────────────────────────────────────────────
   const loadData = async () => {
     try {
       setLoading(true)
@@ -40,58 +71,73 @@ export default function MyProjects() {
 
       const myId = session.user.id
 
-      // Pull relational datasets concurrently
       const [pRes, tRes, uRes, pmRes, taRes] = await Promise.all([
         supabase.from('Projects').select('*'),
         supabase.from('Tasks').select('*'),
         supabase.from('Users').select('id,full_name,role'),
         supabase.from('project_members').select('*'),
-        supabase.from('task_assignees').select('*')
+        supabase.from('task_assignees').select('*'),
       ])
 
       const fetchedUsers = uRes.data || []
-      const me = fetchedUsers.find(u => u.id === myId)
+      const me = fetchedUsers.find((u: any) => u.id === myId)
       setMyRole(me?.role || 'Team Member')
 
       const globalTasks = tRes.data || []
-      const pmRows = pmRes.data || []
-      const taRows = taRes.data || []
+      const pmRows      = pmRes.data || []
+      const taRows      = taRes.data || []
 
-      // Filter down to only projects where I am a roster team member
-      const assignedProjectIds = pmRows.filter(row => row.user_id === myId).map(row => row.project_id)
-      const allowedProjects = (pRes.data || []).filter(p => assignedProjectIds.includes(p.id))
+      // Only projects where I am a roster member
+      const assignedProjectIds = pmRows
+        .filter((row: any) => row.user_id === myId)
+        .map((row: any) => row.project_id)
 
-      const myEnrichedProjects = allowedProjects.reduce((acc: any[], proj, idx) => {
-        const projTasks = globalTasks.filter(t => t.project_id === proj.id || t.project_name === proj.name)
-        const doneTasks = projTasks.filter(t => t.status === 'Completed').length
-        const progressPct = projTasks.length ? Math.round((doneTasks / projTasks.length) * 100) : 0
+      const allowedProjects = (pRes.data || []).filter((p: any) =>
+        assignedProjectIds.includes(p.id)
+      )
 
-        // Gather full user structures for everyone on this project's roster table
-        const rosterUserIds = pmRows.filter(row => row.project_id === proj.id).map(row => row.user_id)
-        const activeMembers = fetchedUsers.filter(u => rosterUserIds.includes(u.id))
+      const enriched = allowedProjects.map((proj: any, idx: number) => {
+        const projTasks  = globalTasks.filter(
+          (t: any) => t.project_id === proj.id || t.project_name === proj.name
+        )
+        const doneTasks  = projTasks.filter((t: any) => t.status === 'Completed').length
+        const progress   = projTasks.length
+          ? Math.round((doneTasks / projTasks.length) * 100)
+          : 0
 
-        acc.push({
+        // NEW: Start = earliest task start date, End = latest task end date
+        const startDates = projTasks.map((t: any) => t.start_date).filter(Boolean).map(d => new Date(d))
+        const endDates   = projTasks.map((t: any) => t.end_date).filter(Boolean).map(d => new Date(d))
+
+        const earliestStart = startDates.length ? new Date(Math.min(...startDates)) : null
+        const latestEnd     = endDates.length   ? new Date(Math.max(...endDates)) : null
+
+        const rosterIds     = pmRows.filter((r: any) => r.project_id === proj.id).map((r: any) => r.user_id)
+        const activeMembers = fetchedUsers.filter((u: any) => rosterIds.includes(u.id))
+
+        return {
           ...proj,
-          taskCount: projTasks.length,
-          doneCount: doneTasks,
-          progress: progressPct,
+          taskCount:     projTasks.length,
+          doneCount:     doneTasks,
+          progress,
           activeMembers,
-          projectColor: proj.color_code || PROJECT_COLORS[idx % PROJECT_COLORS.length]
-        })
-        return acc
-      }, [])
+          projectColor:  proj.color_code || PROJECT_COLORS[idx % PROJECT_COLORS.length],
+          startDate:     earliestStart ? earliestStart.toISOString().split('T')[0] : null,
+          endDate:       latestEnd     ? latestEnd.toISOString().split('T')[0]     : null,
+        }
+      })
 
-      // Enrich tasks for the detail modal to show who is assigned via task_assignees
-      const enrichedTasks = globalTasks.map(task => ({
+      // Enrich tasks with assignees for the modal
+      const enrichedTasks = globalTasks.map((task: any) => ({
         ...task,
-        task_assignees: taRows.filter(ta => ta.task_id === task.id)
+        task_assignees: taRows.filter((ta: any) => ta.task_id === task.id),
       }))
 
-      setProjects(myEnrichedProjects)
+      setProjects(enriched)
       setTasks(enrichedTasks)
       setAllUsers(fetchedUsers)
-    } catch (error) {
-      console.error("Error loading My Projects:", error)
+    } catch (err) {
+      console.error('Error loading My Projects:', err)
     } finally {
       setLoading(false)
     }
@@ -101,174 +147,501 @@ export default function MyProjects() {
 
   const canEdit = myRole === 'Admin' || myRole === 'Manager'
 
-  return (
-    <AppShell title="My Projects">
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button className={view === 'grid' ? 'btn btn-primary' : 'btn'} onClick={() => setView('grid')} style={{ padding: 8, borderRadius: 10, cursor: 'pointer' }}><LayoutGrid size={16} /></button>
-          <button className={view === 'kanban' ? 'btn btn-primary' : 'btn'} onClick={() => setView('kanban')} style={{ padding: 8, borderRadius: 10, cursor: 'pointer' }}><Columns size={16} /></button>
+  // ── Filtered projects ─────────────────────────────────────────────────────
+  const filtered = statusFilter === 'All'
+    ? projects
+    : projects.filter(p => (p.status || 'Not Started') === statusFilter)
+
+  // ── Avatar stack ──────────────────────────────────────────────────────────
+  const AvatarStack = ({ members, size = 26 }: { members: any[]; size?: number }) => (
+    <div style={{ display: 'flex', alignItems: 'center' }}>
+      {members.slice(0, 4).map((u: any, i: number) => (
+        <div
+          key={u.id}
+          title={u.full_name}
+          style={{
+            width: size, height: size, borderRadius: '50%',
+            background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6],
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: size * 0.38, fontWeight: 900,
+            border: '2px solid var(--bg)',
+            marginLeft: i > 0 ? -size * 0.3 : 0,
+            zIndex: 10 - i, flexShrink: 0,
+          }}
+        >
+          {ini(u.full_name)}
         </div>
-        {canEdit && (
-          <Link href="/projects/create" className="btn-primary-action" style={{ textDecoration: 'none', background: 'var(--txt)', color: 'var(--bg)', padding: '8px 16px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700 }}><Plus size={14} /> New Project</Link>
-        )}
+      ))}
+      {members.length > 4 && (
+        <div style={{
+          width: size, height: size, borderRadius: '50%',
+          background: 'var(--bg2)', color: 'var(--txt2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: size * 0.35, fontWeight: 800,
+          border: '2px solid var(--bg)', marginLeft: -size * 0.3,
+        }}>
+          +{members.length - 4}
+        </div>
+      )}
+    </div>
+  )
+
+  // ── Grid card (your original structure) ───────────────────────────────────
+  const GridCard = ({ proj }: { proj: any }) => (
+    <div
+      className="proj-card"
+      onClick={() => setSelectedProject(proj)}
+    >
+      {/* Card top */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div
+          className="proj-color-dot"
+          style={{ background: proj.projectColor, width: 12, height: 12, borderRadius: 3 }}
+        />
+        <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {proj.name}
+        </div>
+        <PillStatus status={proj.status || 'Not Started'} />
       </div>
 
-      {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--txt3)', fontSize: 13, fontWeight: 600 }}>Loading your projects...</div>
-      ) : projects.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', background: 'var(--bg2)', border: '1px dashed var(--brd)', borderRadius: 14 }}>
-          <Folder size={32} color="var(--txt3)" style={{ margin: '0 auto 12px auto' }} />
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)', marginBottom: 4 }}>No projects found</div>
-          <div style={{ fontSize: 12, color: 'var(--txt3)' }}>You haven't been added to any project rosters or relational tasks yet.</div>
+      {/* Description */}
+      {proj.description && (
+        <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {proj.description}
         </div>
-      ) : (
+      )}
+
+      {/* START & END DATES */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
+        <div>
+          <span style={{ fontWeight: 600 }}>Start</span><br />
+          {proj.startDate || '—'}
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <span style={{ fontWeight: 600 }}>End</span><br />
+          {proj.endDate || '—'}
+        </div>
+      </div>
+
+      {/* Progress */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--txt3)', marginBottom: 5 }}>
+        <span>{proj.doneCount} / {proj.taskCount} tasks</span>
+        <span style={{ fontWeight: 700, color: proj.projectColor }}>{proj.progress}%</span>
+      </div>
+      <div className="prog-bar" style={{ marginBottom: 12 }}>
+        <div className="prog-fill" style={{ width: `${proj.progress}%`, background: proj.projectColor }} />
+      </div>
+
+      {/* Footer */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <AvatarStack members={proj.activeMembers} size={22} />
+        {proj.end_date && (
+          <span style={{ fontSize: 11, color: 'var(--txt3)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            📅 {proj.end_date}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+
+  // ── List row (your original structure) ────────────────────────────────────
+  const ListRow = ({ proj }: { proj: any }) => {
+    const open     = expandedProj[proj.id]
+    const projTasks = tasks.filter(
+      t => t.project_id === proj.id || t.project_name === proj.name
+    )
+
+    return (
+      <div className="task-table" style={{ marginBottom: 10 }}>
+        {/* Project header row */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '20px 14px 1fr 120px 100px 90px 80px',
+            alignItems: 'center',
+            gap: 10,
+            padding: '12px 16px',
+            cursor: 'pointer',
+            background: 'var(--bg2)',
+          }}
+          onClick={() => setExpandedProj(prev => ({ ...prev, [proj.id]: !prev[proj.id] }))}
+        >
+          <ChevronRight
+            size={14}
+            style={{ color: 'var(--txt3)', transform: open ? 'rotate(90deg)' : '', transition: 'transform .2s' }}
+          />
+          <div
+            style={{ width: 10, height: 10, borderRadius: 3, background: proj.projectColor, flexShrink: 0 }}
+          />
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>{proj.name}</span>
+          <span style={{ fontSize: 11, color: 'var(--txt3)' }}>
+            {proj.startDate || '—'} – {proj.endDate || '—'}
+          </span>
+          <div>
+            <div className="prog-bar" style={{ marginBottom: 3 }}>
+              <div className="prog-fill" style={{ width: `${proj.progress}%`, background: proj.projectColor }} />
+            </div>
+            <span style={{ fontSize: 10, color: 'var(--txt3)' }}>{proj.progress}%</span>
+          </div>
+          <AvatarStack members={proj.activeMembers} size={20} />
+          <PillStatus status={proj.status || 'Not Started'} />
+        </div>
+
+        {/* Task rows */}
+        {open && projTasks.map((t: any) => (
+          <div
+            key={t.id}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '20px 14px 1fr 120px 100px 90px 80px',
+              alignItems: 'center',
+              gap: 10,
+              padding: '9px 16px',
+              borderTop: '1px solid var(--brd)',
+              cursor: 'pointer',
+              background: 'var(--bg)',
+              transition: 'background .15s',
+            }}
+            onClick={() => router.push(`/tasks/${t.id}`)}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg)')}
+          >
+            <span />
+            <span
+              className="status-dot"
+              style={{
+                background: STATUS_DOT[t.status] || '#aaa',
+                width: 8, height: 8,
+              }}
+            />
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {t.topic}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--txt3)' }}>{t.end_date || '—'}</span>
+            <span />
+            <div>
+              {t.owner
+                ? <div className="av-sm av-1" style={{ fontSize: 9, fontWeight: 800 }}>
+                    {t.owner.slice(0, 2).toUpperCase()}
+                  </div>
+                : <span style={{ fontSize: 11, color: 'var(--txt3)' }}>—</span>
+              }
+            </div>
+            <PillStatus status={t.status} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // ── Loading state ─────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <AppShell title="My Projects">
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--txt3)', fontSize: 13, fontWeight: 600 }}>
+          Loading your projects...
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ── Empty state ───────────────────────────────────────────────────────────
+  const isEmpty = filtered.length === 0
+
+  return (
+    <AppShell title="My Projects">
+
+      {/* ── KPI SECTION ── */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
+        gap: 16, 
+        marginBottom: 28 
+      }}>
+        {[
+          { label: 'Total Projects', count: projects.length, color: 'var(--txt)' },
+          { label: 'Not Started', count: projects.filter(p => !p.status || p.status === 'Not Started').length, color: 'var(--txt2)' },
+          { label: 'In Progress', count: projects.filter(p => p.status === 'In Progress').length, color: '#378ADD' },
+          { label: 'On-Hold', count: projects.filter(p => p.status === 'On-Hold').length, color: '#EF9F27' },
+          { label: 'Completed', count: projects.filter(p => p.status === 'Completed').length, color: '#639922' },
+        ].map(kpi => (
+          <div key={kpi.label} style={{
+            background: 'var(--bg)', 
+            border: '1px solid var(--brd)', 
+            borderRadius: 12, 
+            padding: '18px 20px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.03)', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: 8
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--txt3)' }}>
+              {kpi.label}
+            </div>
+            <div style={{ fontSize: 36, fontWeight: 900, color: kpi.color, lineHeight: 1 }}>
+              {kpi.count}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Toolbar (identical to My Tasks page) ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+
+        {/* Grid / List Toggle - identical style */}
+        <div className="view-toggle" style={{ background: 'var(--bg2)', padding: 3, borderRadius: 8 }}>
+          <button className={`vb ${view === 'grid' ? 'on' : 'off'}`} onClick={() => setView('grid')}>
+            <LayoutGrid size={14} /> Grid
+          </button>
+          <button className={`vb ${view === 'list' ? 'on' : 'off'}`} onClick={() => setView('list')}>
+            <Columns size={14} /> List
+          </button>
+        </div>
+
+        {/* Filters grouped on the right */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+          <div className="filter-pill">
+            <Filter size={13} color="var(--txt3)" />
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ border: 'none', background: 'transparent', fontSize: 13, fontWeight: 600 }}>
+              <option value="All">All Status</option>
+              {PROJECT_STATUSES.map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <span style={{ fontSize: 12, color: 'var(--txt3)', whiteSpace: 'nowrap' }}>
+          {filtered.length} project{filtered.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* ── Empty state ── */}
+      {isEmpty && (
+        <div className="empty-state">
+          <Folder size={32} color="var(--txt3)" />
+          <div style={{ marginTop: 8, fontWeight: 600 }}>No projects found</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--txt3)' }}>
+            {projects.length === 0
+              ? "You haven't been added to any project rosters yet."
+              : 'No projects match the selected filter.'}
+          </div>
+        </div>
+      )}
+
+      {/* ── GRID VIEW ── */}
+      {!isEmpty && view === 'grid' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+          {filtered.map(proj => <GridCard key={proj.id} proj={proj} />)}
+        </div>
+      )}
+
+      {/* ── LIST VIEW ── */}
+      {!isEmpty && view === 'list' && (
         <>
-          {view === 'grid' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-              {projects.map((proj) => (
-                <div key={proj.id} onClick={() => setSelectedProject(proj)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 16, padding: 20, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }} className="hover-lift">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 10, background: `${proj.projectColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Folder size={18} color={proj.projectColor} />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)', lineHeight: 1.2 }}>{proj.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--txt3)', fontWeight: 600, marginTop: 4 }}>{proj.status || 'Not Started'}</div>
-                      </div>
-                    </div>
-                    <button style={{ background: 'none', border: 'none', color: 'var(--txt3)', cursor: 'pointer' }}><MoreVertical size={16} /></button>
-                  </div>
-
-                  <div style={{ marginBottom: 20 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, color: 'var(--txt2)', marginBottom: 8 }}>
-                      <span>Progress</span>
-                      <span>{proj.progress}%</span>
-                    </div>
-                    <div style={{ width: '100%', height: 6, background: 'var(--bg2)', borderRadius: 10, overflow: 'hidden' }}>
-                      <div style={{ width: `${proj.progress}%`, height: '100%', background: proj.projectColor }} />
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 600, marginTop: 8 }}>{proj.doneCount} of {proj.taskCount} tasks completed</div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      {proj.activeMembers.slice(0, 4).map((u: any, i: number) => (
-                        <div key={u.id} title={u.full_name} style={{ width: 28, height: 28, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-8px' : '0', zIndex: 10 - i }}>{ini(u.full_name)}</div>
-                      ))}
-                      {proj.activeMembers.length > 4 && (
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--bg2)', color: 'var(--txt2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 800, border: '2px solid var(--bg)', marginLeft: '-8px' }}>+{proj.activeMembers.length - 4}</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {view === 'kanban' && (
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${PROJECT_STATUSES.length}, 1fr)`, gap: 16 }}>
-              {PROJECT_STATUSES.map(status => {
-                const colProjs = projects.filter(p => (p.status || 'Not Started') === status)
-                return (
-                  <div key={status} style={{ background: 'var(--bg2)', borderRadius: 12, padding: 12, minHeight: '80vh', border: '1px solid var(--brd)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '0 4px' }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: 'var(--txt)' }}>{status}</div>
-                      <span style={{ fontSize: 10, background: 'var(--bg)', padding: '2px 8px', borderRadius: 6, color: 'var(--txt3)', fontWeight: 700 }}>{colProjs.length}</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {colProjs.map((proj) => (
-                        <div key={proj.id} onClick={() => setSelectedProject(proj)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', borderRadius: 12, padding: 16, cursor: 'pointer' }} className="hover-lift">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: proj.projectColor }} />
-                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>{proj.name}</div>
-                          </div>
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: 'var(--txt2)', marginBottom: 6 }}><span>Progress</span><span>{proj.progress}%</span></div>
-                            <div style={{ width: '100%', height: 4, background: 'var(--bg2)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${proj.progress}%`, height: '100%', background: proj.projectColor }} /></div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                              {proj.activeMembers.slice(0, 3).map((u: any, i: number) => (
-                                <div key={u.id} style={{ width: 22, height: 22, borderRadius: '50%', background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 900, border: '2px solid var(--bg)', marginLeft: i > 0 ? '-6px' : '0' }}>{ini(u.full_name)}</div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          {/* Column headers */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '20px 14px 1fr 120px 100px 90px 80px',
+            gap: 10, padding: '6px 16px 8px',
+            marginBottom: 4,
+          }}>
+            <div /><div />
+            <div className="col-header">Project / Task</div>
+            <div className="col-header">Timeline</div>
+            <div className="col-header">Progress</div>
+            <div className="col-header">Members</div>
+            <div className="col-header">Status</div>
+          </div>
+          {filtered.map(proj => <ListRow key={proj.id} proj={proj} />)}
         </>
       )}
 
-      {/* ── PROJECT OVERVIEW MODAL CONTAINER ── */}
+      {/* ── PROJECT DETAIL MODAL ── */}
       {selectedProject && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setSelectedProject(null)}>
-          <div style={{ background: 'var(--bg)', width: '100%', maxWidth: 800, maxHeight: '90vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.2)', border: '1px solid var(--brd)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--brd)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', background: 'var(--bg2)' }}>
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setSelectedProject(null)}
+        >
+          <div
+            style={{
+              background: 'var(--bg)',
+              width: '100%', maxWidth: 800, maxHeight: '90vh',
+              borderRadius: 16, overflow: 'hidden',
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              border: '1px solid var(--brd)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div style={{
+              padding: '24px 28px',
+              borderBottom: '1px solid var(--brd)',
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+              background: 'var(--bg2)',
+            }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: selectedProject.projectColor }} />
-                  <h2 style={{ fontSize: 24, fontWeight: 800, color: 'var(--txt)', margin: 0 }}>{selectedProject.name}</h2>
-                  <span style={{ fontSize: 11, padding: '4px 10px', background: 'var(--bg)', borderRadius: 20, border: '1px solid var(--brd)', fontWeight: 600 }}>{selectedProject.status || 'Not Started'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 3, background: selectedProject.projectColor }} />
+                  <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--txt)', margin: 0 }}>
+                    {selectedProject.name}
+                  </h2>
+                  <PillStatus status={selectedProject.status || 'Not Started'} />
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--txt3)', margin: 0, maxWidth: 600 }}>{selectedProject.description || 'No project description provided.'}</p>
+                <p style={{ fontSize: 13, color: 'var(--txt3)', margin: 0, maxWidth: 500 }}>
+                  {selectedProject.description || 'No description provided.'}
+                </p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {canEdit && <button onClick={() => router.push(`/projects/${selectedProject.id}`)} className="btn" style={{ display: 'flex', alignItems: 'center', gap: 6, borderRadius: 10, padding: '6px 12px', cursor: 'pointer' }}><Edit3 size={14} /> Edit</button>}
-                <button onClick={() => setSelectedProject(null)} style={{ background: 'var(--bg)', border: '1px solid var(--brd)', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--txt2)' }}><X size={18} /></button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {canEdit && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => router.push(`/projects/${selectedProject.id}`)}
+                  >
+                    <Edit3 size={13} /> Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedProject(null)}
+                  style={{
+                    background: 'var(--bg)', border: '1px solid var(--brd)',
+                    width: 34, height: 34, borderRadius: 8,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', color: 'var(--txt2)',
+                  }}
+                >
+                  <X size={16} />
+                </button>
               </div>
             </div>
 
-            <div style={{ padding: 32, overflowY: 'auto', flex: 1 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
-                <div style={{ border: '1px solid var(--brd)', padding: 16, borderRadius: 14 }}>
-                  <div style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 600, marginBottom: 8 }}>Overall Progress</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ flex: 1, height: 8, background: 'var(--bg2)', borderRadius: 10, overflow: 'hidden' }}><div style={{ width: `${selectedProject.progress}%`, height: '100%', background: selectedProject.projectColor }} /></div>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--txt)' }}>{selectedProject.progress}%</span>
+            {/* Modal body */}
+            <div style={{ padding: 28, overflowY: 'auto', flex: 1 }}>
+
+              {/* Stats strip */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 24 }}>
+                {[
+                  {
+                    label: 'Overall Progress',
+                    value: (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="prog-bar" style={{ flex: 1 }}>
+                          <div className="prog-fill" style={{ width: `${selectedProject.progress}%`, background: selectedProject.projectColor }} />
+                        </div>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--txt)' }}>
+                          {selectedProject.progress}%
+                        </span>
+                      </div>
+                    ),
+                  },
+                  {
+                    label: 'Scope Status',
+                    value: <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)' }}>{selectedProject.doneCount} / {selectedProject.taskCount} Tasks</span>,
+                  },
+                  {
+                    label: 'Resources',
+                    value: <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)' }}>{Array.isArray(selectedProject.resources) ? selectedProject.resources.length : 0} Linked</span>,
+                  },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ border: '1px solid var(--brd)', padding: 14, borderRadius: 10, background: 'var(--bg)' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 10 }}>
+                      {label}
+                    </div>
+                    {value}
                   </div>
+                ))}
+              </div>
+
+              {/* Team members */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 12 }}>
+                  Team Members
                 </div>
-                <div style={{ border: '1px solid var(--brd)', padding: 16, borderRadius: 14 }}>
-                  <div style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 600, marginBottom: 8 }}>Scope Status</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)' }}>{selectedProject.doneCount} / {selectedProject.taskCount} Tasks Complete</div>
-                </div>
-                <div style={{ border: '1px solid var(--brd)', padding: 16, borderRadius: 14 }}>
-                  <div style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 600, marginBottom: 8 }}>Project Resources</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>{Array.isArray(selectedProject.resources) ? selectedProject.resources.length : 0} Assets Linked</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {selectedProject.activeMembers.map((u: any, i: number) => (
+                    <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg2)', border: '1px solid var(--brd)', borderRadius: 8 }}>
+                      <div style={{
+                        width: 24, height: 24, borderRadius: '50%',
+                        background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6],
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 9, fontWeight: 900,
+                      }}>
+                        {ini(u.full_name)}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--txt)' }}>{u.full_name}</div>
+                        <div style={{ fontSize: 10, color: 'var(--txt3)' }}>{u.role}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* ── LIVE SCOPE TASKS ROSTER INDEX ── */}
+              {/* Task scope */}
               <div>
-                <h3 style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', color: 'var(--txt3)', letterSpacing: '0.05em', marginBottom: 12 }}>Active Task Scope</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {tasks.filter(t => t.project_id === selectedProject.id || t.project_name === selectedProject.name).map(task => {
-                    const assignees = (task.task_assignees || []).map((ta: any) => allUsers.find((u: any) => u.id === ta.user_id)).filter(Boolean)
-                    return (
-                      <div key={task.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg2)', borderRadius: 12, border: '1px solid var(--brd)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <StatusDot status={task.status} />
-                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)' }}>{task.topic}</span>
+                <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 12 }}>
+                  Task Scope
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {tasks
+                    .filter(t => t.project_id === selectedProject.id || t.project_name === selectedProject.name)
+                    .map((task: any) => {
+                      const assignees = (task.task_assignees || [])
+                        .map((ta: any) => allUsers.find((u: any) => u.id === ta.user_id))
+                        .filter(Boolean)
+                      return (
+                        <div
+                          key={task.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '10px 14px', background: 'var(--bg2)',
+                            borderRadius: 8, border: '1px solid var(--brd)',
+                            cursor: 'pointer',
+                          }}
+                          onClick={() => { setSelectedProject(null); router.push(`/tasks/${task.id}`) }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <StatusDot status={task.status} />
+                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)' }}>{task.topic}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                              {assignees.map((u: any, idx: number) => (
+                                <div
+                                  key={u.id}
+                                  style={{
+                                    width: 20, height: 20, borderRadius: '50%',
+                                    background: AVATAR_BG[idx % 6], color: AVATAR_CL[idx % 6],
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: 8, fontWeight: 900,
+                                  }}
+                                >
+                                  {ini(u.full_name)}
+                                </div>
+                              ))}
+                            </div>
+                            <PillStatus status={task.status} />
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {assignees.map((u: any, idx: number) => (
-                            <div key={u.id} style={{ width: 20, height: 20, borderRadius: '50%', background: AVATAR_BG[idx % 6], color: AVATAR_CL[idx % 6], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 900, border: '1px solid var(--brd)' }}>{ini(u.full_name)}</div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                  }
+                  {tasks.filter(t => t.project_id === selectedProject.id || t.project_name === selectedProject.name).length === 0 && (
+                    <div style={{ fontSize: 13, color: 'var(--txt3)', padding: '12px 0' }}>No tasks in this project yet.</div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
     </AppShell>
   )
 }

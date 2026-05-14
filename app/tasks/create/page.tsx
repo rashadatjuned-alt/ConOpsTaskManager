@@ -1,22 +1,34 @@
 'use client'
 export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { Plus, Trash2, ArrowLeft, Save, Calendar, Link as LinkIcon } from 'lucide-react'
 import type { Resource } from '@/types'
 
+// ── Constants ─────────────────────────────────────────────────────────────
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 const TYPES    = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
 
+// ── Types ─────────────────────────────────────────────────────────────────
 interface SubtaskDraft {
   id: string
   topic: string
   description: string
-  assignees: string[] 
+  assignees: string[]
   start_date: string
   end_date: string
   status: string
+}
+
+// ── Status selector ───────────────────────────────────────────────────────
+const STATUS_SEL: Record<string, string> = {
+  'Not Started': 'sel-ns',
+  'In Progress': 'sel-ip',
+  'On-Hold':     'sel-oh',
+  'Completed':   'sel-c',
 }
 
 export default function CreateTask() {
@@ -24,52 +36,48 @@ export default function CreateTask() {
   const today    = new Date().toISOString().split('T')[0]
   const nextWeek = new Date(Date.now() + 7 * 864e5).toISOString().split('T')[0]
 
-  const [allProjects,    setAllProjects]    = useState<any[]>([])
-  const [allUsers,       setAllUsers]       = useState<any[]>([])   
-  const [projectTeam,    setProjectTeam]    = useState<any[]>([])
-  
-  const [error,          setError]          = useState('')
-  const [success,        setSuccess]        = useState('')
-  const [saving,         setSaving]         = useState(false)
+  // ── Server state ─────────────────────────────────────────────────────────
+  const [allProjects, setAllProjects] = useState<any[]>([])
+  const [allUsers,    setAllUsers]    = useState<any[]>([])
+  const [projectTeam, setProjectTeam] = useState<any[]>([])
+  const [saving,      setSaving]      = useState(false)
+  const [error,       setError]       = useState('')
+  const [success,     setSuccess]     = useState('')
 
-  // Task State
-  const [projectId,   setProjectId]   = useState('') 
-  const [topic,       setTopic]       = useState('')
-  const [type,        setType]        = useState('One-time')
-  const [status,      setStatus]      = useState('Not Started')
-  const [startDate,   setStartDate]   = useState(today)
-  const [endDate,     setEndDate]     = useState(nextWeek)
-  const [desc,        setDesc]        = useState('')
-  
-  const [assignees,   setAssignees]   = useState<string[]>([])
-  const [resources,   setResources]   = useState<Resource[]>([])
-  const [subtasks,    setSubtasks]    = useState<SubtaskDraft[]>([])
+  // ── Task form state ───────────────────────────────────────────────────────
+  const [projectId, setProjectId] = useState('')
+  const [topic,     setTopic]     = useState('')
+  const [type,      setType]      = useState('One-time')
+  const [status,    setStatus]    = useState('Not Started')
+  const [startDate, setStartDate] = useState(today)
+  const [endDate,   setEndDate]   = useState(nextWeek)
+  const [desc,      setDesc]      = useState('')
+  const [assignees, setAssignees] = useState<string[]>([])
+  const [resources, setResources] = useState<Resource[]>([])
+  const [subtasks,  setSubtasks]  = useState<SubtaskDraft[]>([])
 
-  // ── INITIAL LOAD: Dynamic Role-Based Filtering ──
+  // ── Load projects + users ─────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const myId = session.user.id
 
-      // 1. Fetch current user's profile to parse authorization role privileges
       const { data: me } = await supabase.from('Users').select('role').eq('id', myId).single()
       const myRole = me?.role || 'Team Member'
 
-      // 2. Extract base configuration profiles natively
       const [p, u, pm] = await Promise.all([
         supabase.from('Projects').select('id, name'),
         supabase.from('Users').select('id, full_name, email, role'),
-        supabase.from('project_members').select('project_id').eq('user_id', myId)
+        supabase.from('project_members').select('project_id').eq('user_id', myId),
       ])
 
-      const globalProjects = p.data || []
-      const assignedProjectIds = (pm.data || []).map(m => m.project_id)
+      const globalProjects     = p.data || []
+      const assignedProjectIds = (pm.data || []).map((m: any) => m.project_id)
 
-      // 3. Conditional filter evaluation track
       const accessibleProjects = (myRole === 'Admin' || myRole === 'Manager')
         ? globalProjects
-        : globalProjects.filter(proj => assignedProjectIds.includes(proj.id))
+        : globalProjects.filter((proj: any) => assignedProjectIds.includes(proj.id))
 
       setAllProjects(accessibleProjects)
       setAllUsers((u.data || []).filter((usr: any) => usr.role !== 'Admin'))
@@ -77,39 +85,31 @@ export default function CreateTask() {
     load()
   }, [])
 
-  // ── FILTER TEAM MEMBERS BASED ON SELECTED PROJECT ──
+  // ── Filter team when project changes ─────────────────────────────────────
   useEffect(() => {
-    if (!projectId) { 
-      setProjectTeam([])
-      setAssignees([]) 
-      return 
-    }
-    
-    const fetchProjectTeam = async () => {
+    if (!projectId) { setProjectTeam([]); setAssignees([]); return }
+    const fetchTeam = async () => {
       const { data: members } = await supabase
-        .from('project_members')
-        .select('user_id')
-        .eq('project_id', projectId)
-        
+        .from('project_members').select('user_id').eq('project_id', projectId)
       if (members && members.length > 0) {
-        const memberIds = members.map(m => m.user_id)
-        setProjectTeam(allUsers.filter(u => memberIds.includes(u.id)))
+        const ids = members.map((m: any) => m.user_id)
+        setProjectTeam(allUsers.filter((u: any) => ids.includes(u.id)))
       } else {
-        setProjectTeam([]) 
+        setProjectTeam([])
       }
     }
-    
-    fetchProjectTeam()
+    fetchTeam()
     setAssignees([])
     setSubtasks(prev => prev.map(s => ({ ...s, assignees: [] })))
   }, [projectId, allUsers])
 
+  // ── Assignee toggles ─────────────────────────────────────────────────────
   const toggleAssignee = useCallback((userId: string) => {
     setAssignees(prev => {
       const next = prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
       if (prev.includes(userId)) {
         setSubtasks(subs => subs.map(s => ({
-          ...s, assignees: s.assignees.filter(a => a !== userId)
+          ...s, assignees: s.assignees.filter(a => a !== userId),
         })))
       }
       return next
@@ -119,283 +119,463 @@ export default function CreateTask() {
   const toggleSubAssignee = (subId: string, userId: string) => {
     setSubtasks(prev => prev.map(s => {
       if (s.id !== subId) return s
-      return { 
-        ...s, 
-        assignees: s.assignees.includes(userId) ? s.assignees.filter(a => a !== userId) : [...s.assignees, userId] 
+      return {
+        ...s,
+        assignees: s.assignees.includes(userId)
+          ? s.assignees.filter(a => a !== userId)
+          : [...s.assignees, userId],
       }
     }))
   }
 
-  const addResource = () => setResources(p => [...p, { sl: p.length + 1, title: '', link: '' }])
+  // ── Resource helpers ──────────────────────────────────────────────────────
+  const addResource = () =>
+    setResources(p => [...p, { sl: p.length + 1, title: '', link: '' }])
   const updateResource = (i: number, field: 'title' | 'link', val: string) =>
     setResources(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
   const removeResource = (i: number) =>
     setResources(p => p.filter((_, idx) => idx !== i).map((r, idx) => ({ ...r, sl: idx + 1 })))
 
+  // ── Subtask helpers ───────────────────────────────────────────────────────
   const addSubtask = () => setSubtasks(prev => [...prev, {
-    id: `new-${Date.now()}`, topic: '', description: '', assignees: [], 
-    start_date: startDate, end_date: endDate, status: 'Not Started'
+    id: `new-${Date.now()}`, topic: '', description: '', assignees: [],
+    start_date: startDate, end_date: endDate, status: 'Not Started',
   }])
   const updateSub = (id: string, field: string, val: string) =>
     setSubtasks(prev => prev.map(s => s.id === id ? { ...s, [field]: val } : s))
   const removeSub = (id: string) => setSubtasks(prev => prev.filter(s => s.id !== id))
 
+  // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setError(''); setSuccess(''); setSaving(true)
-    
-    if (!projectId) { setError('Please select a project context.'); setSaving(false); return }
+    if (!projectId)    { setError('Please select a project.'); setSaving(false); return }
     if (!topic.trim()) { setError('Task title is required.'); setSaving(false); return }
     if (endDate < startDate) { setError('End date cannot be before start date.'); setSaving(false); return }
-    
-    const selectedProject = allProjects.find(p => p.id === Number(projectId))
+
+    const selectedProject = allProjects.find((p: any) => p.id === Number(projectId))
 
     try {
       const { data: taskData, error: taskErr } = await supabase.from('Tasks').insert({
-        project_id: Number(projectId), 
-        project_name: selectedProject ? selectedProject.name : '', 
-        topic: topic.trim(), 
-        description: desc.trim(),
-        type: type, 
-        start_date: startDate,
-        end_date: endDate, 
-        status: status, 
-        tags: [],
-        resources: resources
+        project_id:   Number(projectId),
+        project_name: selectedProject?.name || '',
+        topic:        topic.trim(),
+        description:  desc.trim(),
+        type, start_date: startDate, end_date: endDate, status,
+        tags: [], resources,
       }).select().single()
 
       if (taskErr) throw taskErr
 
       if (assignees.length > 0) {
-        const taskAssigneePayload = assignees.map(userId => ({
-          task_id: taskData.id,
-          user_id: userId
-        }))
-        await supabase.from('task_assignees').insert(taskAssigneePayload)
+        await supabase.from('task_assignees').insert(
+          assignees.map(uid => ({ task_id: taskData.id, user_id: uid }))
+        )
       }
 
       for (const s of subtasks) {
         const { data: subData, error: subErr } = await supabase.from('Subtasks').insert({
-          parent_task_id: taskData.id, 
-          topic: s.topic.trim(),
-          description: s.description.trim(),
-          start_date: s.start_date,
-          end_date: s.end_date, 
-          status: s.status,
+          parent_task_id: taskData.id,
+          topic:          s.topic.trim(),
+          description:    s.description.trim(),
+          start_date:     s.start_date,
+          end_date:       s.end_date,
+          status:         s.status,
         }).select().single()
 
         if (!subErr && s.assignees.length > 0) {
-          const subAssigneePayload = s.assignees.map(userId => ({
-            subtask_id: subData.id,
-            user_id: userId
-          }))
-          await supabase.from('subtask_assignees').insert(subAssigneePayload)
+          await supabase.from('subtask_assignees').insert(
+            s.assignees.map(uid => ({ subtask_id: subData.id, user_id: uid }))
+          )
         }
       }
-      
-      setSuccess(`✅ Task created successfully!`)
+
+      setSuccess('✅ Task created successfully!')
       setTimeout(() => router.push('/my-tasks'), 1000)
     } catch (e: any) { setError(e.message) }
     setSaving(false)
   }
 
-  const selectedProject = allProjects.find(p => p.id === Number(projectId))
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const selectedProject = allProjects.find((p: any) => p.id === Number(projectId))
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <AppShell title="Create Task">
-      <style dangerouslySetInnerHTML={{ __html: `
-        .tv-wrapper { color: var(--text-main); font-size: 14px; display: flex; flex-direction: column; gap: 20px; }
-        .tv-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 12px; }
-        .tv-back-nav { color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 8px; cursor: pointer; background: none; border: none; font-size: 14px; }
-        .tv-actions { display: flex; gap: 10px; align-items: center; }
-        .tv-btn { background-color: var(--btn-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.2s; }
-        .tv-btn-primary { background-color: var(--txt); color: var(--bg); font-weight: 700; }
-        .tv-card { background-color: var(--bg); border: 1px solid var(--brd); border-radius: 12px; padding: 20px; }
-        .tv-section-title { font-size: 15px; font-weight: 600; color: var(--txt); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--brd); padding-bottom: 12px; }
-        .tv-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
-        .tv-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 16px; }
-        .tv-field { display: flex; flex-direction: column; gap: 6px; }
-        .tv-label { font-size: 11px; text-transform: uppercase; color: var(--txt3); font-weight: 600; letter-spacing: 0.05em; }
-        .tv-input { width: 100%; padding: 8px 12px; background: var(--bg2); border: 1px solid var(--brd); border-radius: 6px; color: var(--txt); font-size: 14px; outline: none; }
-        .tv-textarea { width: 100%; padding: 8px 12px; background: var(--bg2); border: 1px solid var(--brd); border-radius: 6px; color: var(--txt); font-size: 14px; outline: none; min-height: 80px; resize: vertical; }
-        .tv-table { width: 100%; border-collapse: collapse; text-align: left; }
-        .tv-table th { font-size: 11px; text-transform: uppercase; color: var(--txt3); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--brd); }
-        .tv-table td { font-size: 13px; color: var(--txt); padding: 12px; border-bottom: 1px solid var(--brd); vertical-align: top; }
-        .tv-chip-container { display: flex; gap: 8px; flex-wrap: wrap; }
-        .tv-chip { background: var(--bg2); border: 1px solid var(--brd); border-radius: 16px; padding: 4px 12px; font-size: 12px; color: var(--txt); cursor: pointer; transition: 0.2s;}
-        .tv-chip.selected { background-color: var(--txt); color: var(--bg); border-color: var(--txt); }
-        .tv-alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
-        .tv-alert-error { background-color: rgba(239, 68, 68, 0.1); color: #ef4444; }
-        .tv-alert-success { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; }
-      `}} />
 
-      <div className="tv-wrapper">
-        <div className="tv-top-bar">
-          <button className="tv-back-nav" onClick={() => router.back()}>✕ Cancel</button>
-          <div className="tv-actions">
-            <select className="tv-input" style={{ width: 130, padding: '6px 10px' }} value={status} onChange={e => setStatus(e.target.value)}>
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
-            <button className="tv-btn tv-btn-primary" onClick={handleSubmit} disabled={saving}>
-              {saving ? 'Creating...' : '💾 Create Task'}
-            </button>
-          </div>
+      {/* ── Toolbar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <button className="btn" onClick={() => router.back()}>
+          <ArrowLeft size={14} /> Cancel
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            <Save size={14} />
+            {saving ? 'Creating...' : `Create Task${subtasks.length > 0 ? ` + ${subtasks.length} Subtask${subtasks.length > 1 ? 's' : ''}` : ''}`}
+          </button>
         </div>
+      </div>
 
-        {error   && <div className="tv-alert tv-alert-error">{error}</div>}
-        {success && <div className="tv-alert tv-alert-success">{success}</div>}
+      {error   && <div className="alert alert-error"   style={{ marginBottom: 16 }}>{error}</div>}
+      {success && <div className="alert alert-success" style={{ marginBottom: 16 }}>{success}</div>}
 
-        {/* ── 1. TASK CORE SPECIFICATIONS ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">New Task Details</div>
-          <div className="tv-grid-2">
-            <div className="tv-field">
-              <span className="tv-label">Project Scope Matrix *</span>
-              <select className="tv-input" value={projectId} onChange={e => setProjectId(e.target.value)}>
-                <option value="">Select an assigned project...</option>
-                {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">Task Title *</span>
-              <input className="tv-input" placeholder="Task objective title..." value={topic} onChange={e => setTopic(e.target.value)} />
-            </div>
-          </div>
+      <div className="two-col-layout">
 
-          <div className="tv-field" style={{ marginBottom: 20 }}>
-            <span className="tv-label">Description</span>
-            <textarea className="tv-textarea" placeholder="Context, details, expectations..." value={desc} onChange={e => setDesc(e.target.value)} />
-          </div>
+        {/* ── LEFT column ── */}
+        <div>
 
-          <div className="tv-grid-4">
-            <div className="tv-field">
-              <span className="tv-label">Start Date</span>
-              <input type="date" className="tv-input" value={startDate} onChange={e => setStartDate(e.target.value)} />
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">End Date</span>
-              <input type="date" className="tv-input" value={endDate} onChange={e => setEndDate(e.target.value)} />
-            </div>
-            <div className="tv-field">
-              <span className="tv-label">Frequency Type</span>
-              <select className="tv-input" value={type} onChange={e => setType(e.target.value)}>
-                {TYPES.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-        </div>
+          {/* Task details */}
+          <div className="card">
+            <div className="form-section">Task details</div>
 
-        {/* ── 2. TEAM ASSIGNMENT POOL ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">Assigned Personnel</div>
-          <div className="tv-chip-container">
-            {!projectId ? (
-               <span style={{ fontSize: 13, color: 'var(--txt3)' }}>Select a project scope matrix to view available roster assignees.</span>
-            ) : projectTeam.length === 0 ? (
-              <span style={{ fontSize: 13, color: 'var(--txt3)' }}>⚠️ No active team rosters assigned to this project's database metadata record.</span>
-            ) : (
-              projectTeam.map((u: any) => {
-                const sel = assignees.includes(u.id)
-                return (
-                  <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)} className={`tv-chip ${sel ? 'selected' : ''}`}>
-                    {sel ? '✓ ' : ''}{u.full_name}
+            <div className="form-group">
+              <label className="form-label">Task title *</label>
+              <input
+                className="form-input"
+                placeholder="Short, clear title..."
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
+              />
+            </div>
+
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Project *</label>
+                <select className="form-select" value={projectId} onChange={e => setProjectId(e.target.value)}>
+                  <option value="">Select project...</option>
+                  {allProjects.map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Task type</label>
+                <select className="form-select" value={type} onChange={e => setType(e.target.value)}>
+                  {TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Start date</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">End date</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {STATUSES.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`status-opt ${status === s ? STATUS_SEL[s] : ''}`}
+                    onClick={() => setStatus(s)}
+                  >
+                    {s}
                   </button>
-                )
-              })
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Description</label>
+              <textarea
+                className="form-textarea"
+                placeholder="Context, acceptance criteria, notes..."
+                value={desc}
+                onChange={e => setDesc(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Assign to */}
+          <div className="card">
+            <div className="form-section">Assign to</div>
+            {!projectId ? (
+              <p style={{ fontSize: 12, color: 'var(--txt3)' }}>Select a project to see available team members.</p>
+            ) : projectTeam.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--txt3)' }}>⚠️ No team members assigned to this project yet.</p>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
+                  Showing members from {selectedProject?.name}.
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 10 }}>
+                  {projectTeam.map((u: any) => {
+                    const sel = assignees.includes(u.id)
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
+                        onClick={() => toggleAssignee(u.id)}
+                      >
+                        {sel ? '✓ ' : ''}{u.full_name || u.email}
+                      </button>
+                    )
+                  })}
+                </div>
+                {assignees.length > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
+                    {assignees.length} person{assignees.length !== 1 ? 's' : ''} assigned
+                  </div>
+                )}
+              </>
             )}
           </div>
+
+          {/* Subtasks */}
+          <div className="card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div className="form-section" style={{ margin: 0, padding: 0, border: 'none' }}>
+                Subtasks{' '}
+                <span style={{ fontWeight: 400, color: 'var(--txt3)' }}>({subtasks.length})</span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={addSubtask}>
+                <Plus size={13} /> Add Subtask
+              </button>
+            </div>
+
+            {subtasks.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--txt3)', textAlign: 'center', padding: '12px 0' }}>
+                No subtasks yet.
+              </div>
+            ) : subtasks.map((s, i) => (
+              <div
+                key={s.id}
+                className={`block-draft${!s.topic ? ' empty' : ''}`}
+              >
+                <div className="block-header">
+                  <span className="block-label">Subtask {i + 1}</span>
+                  <button className="btn-delete" onClick={() => removeSub(s.id)}>
+                    <Trash2 size={12} /> Remove
+                  </button>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Title *</label>
+                  <input
+                    className="form-input"
+                    placeholder="Subtask title..."
+                    value={s.topic}
+                    onChange={e => updateSub(s.id, 'topic', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <textarea
+                    className="form-textarea form-textarea-sm"
+                    placeholder="Optional notes for this subtask..."
+                    value={s.description}
+                    onChange={e => updateSub(s.id, 'description', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-grid-2" style={{ gap: 8, marginBottom: 10 }}>
+                  <div>
+                    <label className="form-label">Start date</label>
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={s.start_date}
+                      onChange={e => updateSub(s.id, 'start_date', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">End date</label>
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={s.end_date}
+                      onChange={e => updateSub(s.id, 'end_date', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-grid-2" style={{ gap: 8 }}>
+                  <div>
+                    <label className="form-label">Assign to</label>
+                    {assignees.length === 0 ? (
+                      <p style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4 }}>Assign main task first</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+                        {assignees.map(uid => {
+                          const u = projectTeam.find((u: any) => u.id === uid)
+                          const sel = s.assignees.includes(uid)
+                          return (
+                            <button
+                              key={uid}
+                              type="button"
+                              className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
+                              style={{ fontSize: 11, padding: '2px 10px' }}
+                              onClick={() => toggleSubAssignee(s.id, uid)}
+                            >
+                              {sel ? '✓ ' : ''}{u ? (u.full_name || u.email).split(' ')[0] : 'Member'}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="form-label">Status</label>
+                    <select
+                      className="form-select"
+                      value={s.status}
+                      onChange={e => updateSub(s.id, 'status', e.target.value)}
+                    >
+                      {STATUSES.map(st => <option key={st}>{st}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Resources */}
+          <div className="card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div className="form-section" style={{ margin: 0, padding: 0, border: 'none' }}>
+                Resources{' '}
+                <span style={{ fontWeight: 400, color: 'var(--txt3)' }}>({resources.length})</span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={addResource}>
+                <Plus size={13} /> Add Resource
+              </button>
+            </div>
+
+            {resources.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--txt3)', textAlign: 'center', padding: '12px 0' }}>
+                No resources added yet.
+              </div>
+            ) : resources.map((r, i) => (
+              <div key={i} className={`block-draft${!r.title ? ' empty' : ''}`}>
+                <div className="block-header">
+                  <span className="block-label">Resource {i + 1}</span>
+                  <button className="btn-delete" onClick={() => removeResource(i)}>
+                    <Trash2 size={12} /> Remove
+                  </button>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Title *</label>
+                  <input
+                    className="form-input"
+                    placeholder="Resource title..."
+                    value={r.title}
+                    onChange={e => updateResource(i, 'title', e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Link</label>
+                  <div style={{ position: 'relative' }}>
+                    <LinkIcon
+                      size={13}
+                      style={{
+                        position: 'absolute', left: 10, top: '50%',
+                        transform: 'translateY(-50%)', color: 'var(--txt3)',
+                      }}
+                    />
+                    <input
+                      className="form-input"
+                      style={{ paddingLeft: 30 }}
+                      placeholder="https://..."
+                      value={r.link}
+                      onChange={e => updateResource(i, 'link', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
         </div>
 
-        {/* ── 3. RESOURCES LINKS ATTACHMENTS ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">
-            Resources
-            <button className="tv-btn" onClick={addResource}>＋ Add Asset Link</button>
+        {/* ── RIGHT column — summary ── */}
+        <div>
+          <div className="card">
+            <div className="form-section">Summary</div>
+            <div className="summary-row">
+              <span className="summary-lbl">Project</span>
+              <span className="summary-val" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                {selectedProject
+                  ? <><div style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--proj-1)', flexShrink: 0 }} />{selectedProject.name}</>
+                  : '—'
+                }
+              </span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-lbl">Type</span>
+              <span className="summary-val">{type}</span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-lbl">Start</span>
+              <span className="summary-val">{startDate || '—'}</span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-lbl">End</span>
+              <span className="summary-val">{endDate || '—'}</span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-lbl">Status</span>
+              <span className={`pill pill-${status === 'Not Started' ? 'ns' : status === 'In Progress' ? 'ip' : status === 'On-Hold' ? 'oh' : 'c'}`}>
+                {status}
+              </span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-lbl">Assigned</span>
+              <div style={{ display: 'flex', gap: 3 }}>
+                {assignees.length === 0
+                  ? <span className="summary-val">—</span>
+                  : assignees.slice(0, 4).map((uid, i) => {
+                      const u = projectTeam.find((u: any) => u.id === uid)
+                      return (
+                        <div
+                          key={uid}
+                          className={`avatar av-${(i % 6) + 1}`}
+                          style={{ width: 22, height: 22, fontSize: 9, fontWeight: 800 }}
+                          title={u?.full_name}
+                        >
+                          {u ? (u.full_name || u.email).slice(0, 2).toUpperCase() : '??'}
+                        </div>
+                      )
+                    })
+                }
+                {assignees.length > 4 && (
+                  <div className="avatar av-1" style={{ width: 22, height: 22, fontSize: 9, fontWeight: 800 }}>
+                    +{assignees.length - 4}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="summary-row">
+              <span className="summary-lbl">Subtasks</span>
+              <span className="summary-val">{subtasks.length}</span>
+            </div>
+            <div className="summary-row">
+              <span className="summary-lbl">Resources</span>
+              <span className="summary-val">{resources.length}</span>
+            </div>
           </div>
-          {resources.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 13, color: 'var(--txt3)' }}>No resource attachments added to this work node.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 50 }}>SL</th>
-                  <th>Description</th>
-                  <th>URL Address</th>
-                  <th style={{ width: 60, textAlign: 'right' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resources.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.sl}</td>
-                    <td><input className="tv-input" style={{ padding: '6px 10px' }} value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} placeholder="Label..." /></td>
-                    <td><input className="tv-input" style={{ padding: '6px 10px' }} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://..." /></td>
-                    <td style={{ textAlign: 'right' }}><button className="tv-btn" style={{ color: '#ef4444', borderColor: 'transparent', background: 'transparent' }} onClick={() => removeResource(i)}>✕</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
         </div>
 
-        {/* ── 4. SUBTASK PACKAGES SECTION ── */}
-        <div className="tv-card">
-          <div className="tv-section-title">
-            Subtask Work Breakdowns
-            <button className="tv-btn" onClick={addSubtask}>＋ Add Subtask</button>
-          </div>
-          {subtasks.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 13, color: 'var(--txt3)' }}>No subtask breakdowns specified for this objective card.</div>
-          ) : (
-            <table className="tv-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>SL</th>
-                  <th style={{ width: '30%' }}>Scope Topic & Deliverable Notes</th>
-                  <th>Timeline</th>
-                  <th>Assigned Pool</th>
-                  <th style={{ width: 60, textAlign: 'right' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {subtasks.map((s, i) => (
-                  <tr key={s.id}>
-                    <td>{i + 1}</td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <input className="tv-input" style={{ padding: '6px 10px' }} value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} placeholder="Title..." />
-                        <textarea className="tv-textarea" style={{ padding: '6px 10px', minHeight: 40 }} value={s.description || ''} onChange={e => updateSub(String(s.id), 'description', e.target.value)} placeholder="Notes..." />
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <input type="date" className="tv-input" style={{ padding: '4px 8px', fontSize: 12 }} value={s.start_date} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
-                        <input type="date" className="tv-input" style={{ padding: '4px 8px', fontSize: 12 }} value={s.end_date} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
-                      </div>
-                    </td>
-                    <td>
-                      <div className="tv-chip-container" style={{ gap: 4 }}>
-                        {assignees.length === 0 ? (
-                          <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Assign main task first</span>
-                        ) : (
-                          assignees.map(userId => {
-                            const uObj = projectTeam.find(u => u.id === userId)
-                            const sel = s.assignees.includes(userId)
-                            return (
-                              <button key={userId} type="button" onClick={() => toggleSubAssignee(String(s.id), userId)} className={`tv-chip ${sel ? 'selected' : ''}`} style={{ fontSize: 11, padding: '2px 8px' }}>
-                                {uObj ? uObj.full_name.split(' ')[0] : 'Member'}
-                              </button>
-                            )
-                          })
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}><button className="tv-btn" style={{ color: '#ef4444', borderColor: 'transparent', background: 'transparent' }} onClick={() => removeSub(s.id)}>✕</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
       </div>
     </AppShell>
   )
