@@ -5,9 +5,9 @@ import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, ArrowLeft, Save, Link as LinkIcon } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, Save, Link as LinkIcon, X } from 'lucide-react'
 
-// ── Constants ─────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 const TYPES = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
 
 const COLORS = [
@@ -23,7 +23,10 @@ const COLORS = [
   { hex: '#EC4899', label: 'Pink'   },
 ]
 
-// ── Types ─────────────────────────────────────────────────────────────────
+const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
+const AVATAR_CL = ['#0C447C', '#27500A', '#3C3489', '#633806', '#712B13', '#085041']
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface InlineTask {
   id: string
   topic: string
@@ -40,7 +43,15 @@ interface InlineResource {
   link: string
 }
 
-// ── Component ─────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function ini(name: string) {
+  const p = (name || 'User').trim().split(' ')
+  return p.length >= 2
+    ? (p[0][0] + p[p.length - 1][0]).toUpperCase()
+    : (name || '?')[0].toUpperCase()
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function CreateProject() {
   const router   = useRouter()
   const today    = new Date().toISOString().split('T')[0]
@@ -167,38 +178,73 @@ export default function CreateProject() {
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const projectUsers = users.filter(u => members.includes(u.id))
-  const selectedColor = COLORS.find(c => c.hex === color)
+  const projectUsers   = users.filter(u => members.includes(u.id))
+  const selectedColor  = COLORS.find(c => c.hex === color)
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <AppShell title="New Project">
 
+      {/* Page-scoped styles — mirrors project detail */}
+      <style>{`
+        .member-tile {
+          display: flex; align-items: center; gap: 10px;
+          padding: 9px 12px;
+          background: var(--bg2);
+          border: 0.5px solid var(--brd);
+          border-radius: 8px;
+          margin-bottom: 6px;
+        }
+        .member-tile:last-child { margin-bottom: 0; }
+        .meta-row-proj {
+          display: flex; justify-content: space-between; align-items: center;
+          padding: 8px 0;
+          border-bottom: 0.5px solid var(--brd);
+          font-size: 12px;
+        }
+        .meta-row-proj:last-child { border-bottom: none; }
+        .meta-lbl-proj {
+          font-size: 10px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: 0.06em; color: var(--txt3);
+        }
+      `}</style>
+
       {/* ── Toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-        <button className="btn" onClick={() => router.back()}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
+        <button className="btn btn-sm" onClick={() => router.back()}>
           <ArrowLeft size={14} /> Cancel
         </button>
-        <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-          <Save size={14} />
-          {saving ? 'Creating...' : `Create Project${tasks.length > 0 ? ` + ${tasks.length} Task${tasks.length > 1 ? 's' : ''}` : ''}`}
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={saving}>
+          <Save size={13} />
+          {saving
+            ? 'Creating...'
+            : `Create Project${tasks.length > 0 ? ` + ${tasks.length} Task${tasks.length > 1 ? 's' : ''}` : ''}`
+          }
         </button>
       </div>
 
-      {error   && <div className="alert alert-error"   style={{ marginBottom: 16 }}>{error}</div>}
-      {success && <div className="alert alert-success" style={{ marginBottom: 16 }}>{success}</div>}
+      {error   && <div className="alert alert-error"   style={{ marginBottom: 12 }}>{error}</div>}
+      {success && <div className="alert alert-success" style={{ marginBottom: 12 }}>{success}</div>}
 
-      <div className="two-col-layout">
+      {/* ── Two-column layout — mirrors project detail ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.55fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
 
-        {/* ── LEFT column ── */}
+        {/* ════ LEFT COLUMN ════ */}
         <div>
 
-          {/* Project details */}
+          {/* Overview card — mirrors project detail overview */}
           <div className="card">
-            <div className="form-section">Project details</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Overview
+              </span>
+            </div>
 
-            <div className="form-group">
-              <label className="form-label">Project name *</label>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 5 }}>
+                Project name *
+              </label>
               <input
                 className="form-input"
                 placeholder="e.g. Q4 Campaign"
@@ -207,8 +253,10 @@ export default function CreateProject() {
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Description</label>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 5 }}>
+                Description
+              </label>
               <textarea
                 className="form-textarea"
                 placeholder="What is this project about?"
@@ -217,9 +265,11 @@ export default function CreateProject() {
               />
             </div>
 
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Accent color</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingTop: 4 }}>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 8 }}>
+                Accent colour
+              </label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {COLORS.map(c => (
                   <button
                     key={c.hex}
@@ -227,16 +277,15 @@ export default function CreateProject() {
                     title={c.label}
                     onClick={() => setColor(c.hex)}
                     style={{
-                      width: 26, height: 26, borderRadius: '50%',
-                      background: c.hex, border: 'none', cursor: 'pointer',
-                      outline: color === c.hex ? `3px solid var(--nav-active-txt)` : 'none',
-                      outlineOffset: 2, flexShrink: 0,
+                      width: 24, height: 24, borderRadius: '50%',
+                      background: c.hex, border: 'none', cursor: 'pointer', flexShrink: 0,
+                      outline: color === c.hex ? `3px solid ${c.hex}` : 'none',
+                      outlineOffset: 2, transition: 'outline .15s',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      transition: 'outline .15s',
                     }}
                   >
                     {color === c.hex && (
-                      <svg width="12" height="12" fill="none" stroke="white" strokeWidth="3" viewBox="0 0 24 24">
+                      <svg width="11" height="11" fill="none" stroke="white" strokeWidth="3" viewBox="0 0 24 24">
                         <path d="M5 13l4 4L19 7" />
                       </svg>
                     )}
@@ -246,262 +295,339 @@ export default function CreateProject() {
             </div>
           </div>
 
-          {/* Assign members */}
-          <div className="card">
-            <div className="form-section">Assign members</div>
-            <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
-              These people will be available to assign to tasks within this project.
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 10 }}>
-              {users.length === 0
-                ? <span style={{ fontSize: 13, color: 'var(--txt3)' }}>No users available.</span>
-                : users.map((u: any) => {
-                    const sel = members.includes(u.id)
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
-                        onClick={() => toggleMember(u.id)}
-                      >
-                        {sel ? '✓ ' : ''}{u.full_name || u.email}
-                      </button>
-                    )
-                  })
-              }
-            </div>
-            {members.length > 0 && (
-              <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
-                {members.length} member{members.length !== 1 ? 's' : ''} assigned
-              </div>
-            )}
-          </div>
-
-          {/* Tasks */}
-          <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div className="form-section" style={{ margin: 0, padding: 0, border: 'none' }}>
-                Tasks{' '}
-                <span style={{ fontWeight: 400, color: 'var(--txt3)' }}>({tasks.length})</span>
+          {/* ── Tasks card — mirrors project detail tasks table ── */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '0.5px solid var(--brd)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--txt)' }}>Tasks</span>
+                <span style={{ fontSize: 12, color: 'var(--txt3)' }}>({tasks.length})</span>
               </div>
               <button className="btn btn-primary btn-sm" onClick={addTask}>
-                <Plus size={13} /> Add Task
+                <Plus size={12} /> Add Task
               </button>
             </div>
 
             {tasks.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--txt3)', textAlign: 'center', padding: '12px 0' }}>
+              <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: 'var(--txt3)', background: 'var(--bg2)' }}>
                 No tasks yet. You can add them now or create them later.
               </div>
-            ) : tasks.map((t, i) => (
-              <div key={t.id} className={`block-draft${!t.topic ? ' empty' : ''}`}>
-                <div className="block-header">
-                  <span className="block-label">Task {i + 1}</span>
-                  <button className="btn-delete" onClick={() => removeTask(t.id)}>
-                    <Trash2 size={12} /> Remove
-                  </button>
-                </div>
+            ) : (
+              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {tasks.map((t, i) => (
+                  <div key={t.id} style={{ background: 'var(--bg2)', border: '0.5px solid var(--brd)', borderRadius: 8, padding: '12px 14px' }}>
 
-                <div className="form-group">
-                  <label className="form-label">Title *</label>
-                  <input
-                    className="form-input"
-                    placeholder="Task title..."
-                    value={t.topic}
-                    onChange={e => updateTask(t.id, 'topic', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Description</label>
-                  <textarea
-                    className="form-textarea form-textarea-sm"
-                    placeholder="Optional context..."
-                    value={t.description}
-                    onChange={e => updateTask(t.id, 'description', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-grid-2" style={{ gap: 8, marginBottom: 10 }}>
-                  <div>
-                    <label className="form-label">Start date</label>
-                    <input
-                      className="form-input"
-                      type="date"
-                      value={t.start_date}
-                      onChange={e => updateTask(t.id, 'start_date', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">End date</label>
-                    <input
-                      className="form-input"
-                      type="date"
-                      value={t.end_date}
-                      onChange={e => updateTask(t.id, 'end_date', e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-grid-2" style={{ gap: 8 }}>
-                  <div>
-                    <label className="form-label">Task type</label>
-                    <select
-                      className="form-select"
-                      value={t.type}
-                      onChange={e => updateTask(t.id, 'type', e.target.value)}
-                    >
-                      {TYPES.map(tp => <option key={tp}>{tp}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="form-label">Assign to</label>
-                    {projectUsers.length === 0 ? (
-                      <p style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4 }}>
-                        Add members to the project first
-                      </p>
-                    ) : (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
-                        {projectUsers.map((u: any) => {
-                          const sel = t.assignees.includes(u.id)
-                          return (
-                            <button
-                              key={u.id}
-                              type="button"
-                              className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
-                              style={{ fontSize: 11, padding: '2px 10px' }}
-                              onClick={() => toggleTaskAssignee(t.id, u.id)}
-                            >
-                              {sel ? '✓ ' : ''}{(u.full_name || u.email).split(' ')[0]}
-                            </button>
-                          )
-                        })}
+                    {/* Header: number badge + title preview + remove */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{
+                          width: 20, height: 20, borderRadius: '50%',
+                          background: 'var(--bg)', border: '0.5px solid var(--brd2)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 10, fontWeight: 700, color: 'var(--txt3)', flexShrink: 0,
+                        }}>
+                          {i + 1}
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--txt2)' }}>
+                          {t.topic || 'New task'}
+                        </span>
                       </div>
-                    )}
+                      <button
+                        onClick={() => removeTask(t.id)}
+                        style={{ background: 'none', border: 'none', color: '#cc3333', cursor: 'pointer', display: 'flex', padding: 2 }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {/* Title — full width */}
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Title *</label>
+                        <input
+                          className="form-input"
+                          placeholder="Task title..."
+                          value={t.topic}
+                          onChange={e => updateTask(t.id, 'topic', e.target.value)}
+                        />
+                      </div>
+
+                      {/* Description — full width */}
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Description</label>
+                        <textarea
+                          className="form-textarea"
+                          style={{ minHeight: 52, fontSize: 13 }}
+                          placeholder="Optional context..."
+                          value={t.description}
+                          onChange={e => updateTask(t.id, 'description', e.target.value)}
+                        />
+                      </div>
+
+                      {/* Dates */}
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Start date</label>
+                        <input type="date" className="form-input" value={t.start_date} onChange={e => updateTask(t.id, 'start_date', e.target.value)} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>End date</label>
+                        <input type="date" className="form-input" value={t.end_date} onChange={e => updateTask(t.id, 'end_date', e.target.value)} />
+                      </div>
+
+                      {/* Task type */}
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Type</label>
+                        <select
+                          className="form-select"
+                          value={t.type}
+                          onChange={e => updateTask(t.id, 'type', e.target.value)}
+                        >
+                          {TYPES.map(tp => <option key={tp}>{tp}</option>)}
+                        </select>
+                      </div>
+
+                      {/* Assign to */}
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Assign to</label>
+                        {projectUsers.length === 0 ? (
+                          <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Add members first</span>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 2 }}>
+                            {projectUsers.map((u: any) => {
+                              const sel = t.assignees.includes(u.id)
+                              return (
+                                <button
+                                  key={u.id} type="button"
+                                  onClick={() => toggleTaskAssignee(t.id, u.id)}
+                                  className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
+                                  style={{ fontSize: 11, padding: '2px 10px' }}
+                                >
+                                  {sel ? '✓ ' : ''}{(u.full_name || u.email).split(' ')[0]}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
 
-          {/* Resources */}
+          {/* ── Resources card ── */}
           <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div className="form-section" style={{ margin: 0, padding: 0, border: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
                 Resources{' '}
-                <span style={{ fontWeight: 400, color: 'var(--txt3)' }}>({resources.length})</span>
-              </div>
-              <button className="btn btn-primary btn-sm" onClick={addResource}>
-                <Plus size={13} /> Add Resource
+                <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({resources.length})</span>
+              </span>
+              <button className="btn btn-sm" onClick={addResource}>
+                <Plus size={12} /> Add
               </button>
             </div>
 
             {resources.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--txt3)', textAlign: 'center', padding: '12px 0' }}>
-                No resources added yet.
-              </div>
-            ) : resources.map((r, i) => (
-              <div key={r.id} className={`block-draft${!r.title ? ' empty' : ''}`}>
-                <div className="block-header">
-                  <span className="block-label">Resource {i + 1}</span>
-                  <button className="btn-delete" onClick={() => removeResource(r.id)}>
-                    <Trash2 size={12} /> Remove
-                  </button>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Title *</label>
-                  <input
-                    className="form-input"
-                    placeholder="Resource title..."
-                    value={r.title}
-                    onChange={e => updateResource(r.id, 'title', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Link</label>
-                  <div style={{ position: 'relative' }}>
-                    <LinkIcon
-                      size={13}
-                      style={{
-                        position: 'absolute', left: 10, top: '50%',
-                        transform: 'translateY(-50%)', color: 'var(--txt3)',
-                      }}
+              <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No resources added yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resources.map((r, i) => (
+                  <div key={r.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      value={r.title}
+                      onChange={e => updateResource(r.id, 'title', e.target.value)}
+                      placeholder="Label..."
+                      className="form-input"
+                      style={{ flex: 1, padding: '5px 8px', fontSize: 12 }}
                     />
                     <input
-                      className="form-input"
-                      style={{ paddingLeft: 30 }}
-                      placeholder="https://..."
                       value={r.link}
                       onChange={e => updateResource(r.id, 'link', e.target.value)}
+                      placeholder="https://..."
+                      className="form-input"
+                      style={{ flex: 2, padding: '5px 8px', fontSize: 12 }}
                     />
+                    <button
+                      onClick={() => removeResource(r.id)}
+                      style={{ background: 'none', border: 'none', color: '#cc3333', cursor: 'pointer', padding: 4, display: 'flex' }}
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-
         </div>
 
-        {/* ── RIGHT column — summary ── */}
+        {/* ════ RIGHT COLUMN ════ */}
         <div>
+
+          {/* Progress card — mirrors project detail right column */}
           <div className="card">
-            <div className="form-section">Summary</div>
-            <div className="summary-row">
-              <span className="summary-lbl">Name</span>
-              <span className="summary-val" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                {name
-                  ? <><div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />{name}</>
-                  : '—'
-                }
+            <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Progress
               </span>
             </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Color</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 16, height: 16, borderRadius: '50%', background: color }} />
-                <span className="summary-val">{selectedColor?.label || '—'}</span>
+
+            {/* Status + task count side by side */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 5 }}>
+                  Status
+                </div>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                  background: '#F1EFE8', color: '#5F5E5A',
+                }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#aaa', flexShrink: 0 }} />
+                  Not Started
+                </span>
               </div>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Members</span>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {members.length === 0
-                  ? <span className="summary-val">—</span>
-                  : members.slice(0, 4).map((uid, i) => {
-                      const u = users.find((u: any) => u.id === uid)
-                      return (
-                        <div
-                          key={uid}
-                          className={`avatar av-${(i % 6) + 1}`}
-                          style={{ width: 22, height: 22, fontSize: 9, fontWeight: 800 }}
-                          title={u?.full_name}
-                        >
-                          {u ? (u.full_name || u.email).slice(0, 2).toUpperCase() : '??'}
-                        </div>
-                      )
-                    })
-                }
-                {members.length > 4 && (
-                  <div className="avatar av-1" style={{ width: 22, height: 22, fontSize: 9, fontWeight: 800 }}>
-                    +{members.length - 4}
+              {tasks.length > 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 3 }}>
+                    Tasks
                   </div>
-                )}
-              </div>
+                  <div style={{ fontSize: 24, fontWeight: 500, color: 'var(--txt)', lineHeight: 1, marginTop: 3 }}>
+                    {tasks.length}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Tasks</span>
-              <span className="summary-val">{tasks.length}</span>
+
+            {/* Progress bar — empty on create */}
+            <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden', marginBottom: 16 }}>
+              <div style={{ width: '0%', height: '100%', background: color, borderRadius: 3 }} />
             </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Resources</span>
-              <span className="summary-val">{resources.length}</span>
+
+            {/* Start / End date tiles — shown once dates exist from tasks */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {[
+                {
+                  label: 'Start',
+                  value: tasks.length
+                    ? tasks.map(t => t.start_date).filter(Boolean).sort()[0] || '—'
+                    : '—',
+                },
+                {
+                  label: 'End',
+                  value: tasks.length
+                    ? tasks.map(t => t.end_date).filter(Boolean).sort().reverse()[0] || '—'
+                    : '—',
+                },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ background: 'var(--bg2)', border: '0.5px solid var(--brd)', borderRadius: 8, padding: '9px 12px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 4 }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: value === '—' ? 'var(--txt3)' : 'var(--txt)' }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
+          {/* Team Members card — mirrors project detail view mode (no remove button) */}
           <div className="card">
-            <div className="form-section">Tips</div>
+            <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Team Members{' '}
+                <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+                  ({members.length})
+                </span>
+              </span>
+            </div>
+
+            {/* Toggle chips to add/remove */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: members.length > 0 ? 12 : 0 }}>
+              {users.length === 0 ? (
+                <span style={{ fontSize: 12, color: 'var(--txt3)' }}>No users available.</span>
+              ) : users.map((u: any) => {
+                const sel = members.includes(u.id)
+                return (
+                  <button
+                    key={u.id} type="button"
+                    onClick={() => toggleMember(u.id)}
+                    className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
+                  >
+                    {sel ? '✓ ' : ''}{u.full_name || u.email}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Selected members as tiles — same style as project detail view */}
+            {members.length > 0 && (
+              <div>
+                {members.map((uid, idx) => {
+                  const u = users.find((u: any) => u.id === uid)
+                  if (!u) return null
+                  return (
+                    <div key={uid} className="member-tile">
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 8,
+                        background: AVATAR_BG[idx % 6], color: AVATAR_CL[idx % 6],
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 800, flexShrink: 0,
+                      }}>
+                        {ini(u.full_name || u.email)}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {u.full_name || u.email}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                          {u.role}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Resources preview card */}
+          <div className="card">
+            <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Resources{' '}
+                <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({resources.length})</span>
+              </span>
+            </div>
+
+            {resources.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No resources attached.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resources.map((r, idx) => (
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', background: 'var(--bg2)', border: '0.5px solid var(--brd)', borderRadius: 8 }}>
+                    <LinkIcon size={13} color="var(--txt3)" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)', marginBottom: 2 }}>
+                        {r.title || `Resource ${idx + 1}`}
+                      </div>
+                      {r.link && (
+                        <div style={{ fontSize: 11, color: '#185FA5', wordBreak: 'break-all' }}>{r.link}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Tips card */}
+          <div className="card">
+            <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Tips
+              </span>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
                 'Members added here appear in the assignee picker when creating tasks inside this project.',
@@ -513,7 +639,8 @@ export default function CreateProject() {
                     width: 18, height: 18, borderRadius: '50%',
                     background: 'var(--bg2)', color: 'var(--txt3)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, fontWeight: 800, flexShrink: 0, marginTop: 1,
+                    fontSize: 10, fontWeight: 700, flexShrink: 0, marginTop: 1,
+                    border: '0.5px solid var(--brd)',
                   }}>
                     {i + 1}
                   </div>
@@ -522,8 +649,8 @@ export default function CreateProject() {
               ))}
             </div>
           </div>
-        </div>
 
+        </div>
       </div>
     </AppShell>
   )

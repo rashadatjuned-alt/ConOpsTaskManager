@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { 
-  LayoutDashboard, Bell, CheckSquare, Briefcase, PlusSquare, 
-  Globe, Layers, BarChart3, Users, Settings, Lock, Sun, Moon 
+import {
+  LayoutDashboard, Bell, CheckSquare, Briefcase, PlusSquare,
+  Globe, Layers, BarChart3, Users, Settings, Lock, Sun, Moon
 } from 'lucide-react'
 import PasswordModal from './PasswordModal'
 import NotificationModal from './NotificationModal'
@@ -17,7 +17,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [unreadCount, setUnreadCount] = useState(0)
-  
+ 
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [showNotificationModal, setShowNotificationModal] = useState(false)
 
@@ -26,22 +26,18 @@ export default function AppShell({ children, title }: { children: React.ReactNod
     const savedTheme = (localStorage.getItem('app-theme') as 'dark' | 'light') || 'dark'
     setTheme(savedTheme)
     document.documentElement.setAttribute('data-theme', savedTheme)
-
     const getProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { 
-        router.push('/auth'); 
-        return 
+      if (!session) {
+        router.push('/auth');
+        return
       }
-
       const { data: profile } = await supabase
         .from('Users')
         .select('*')
         .eq('id', session.user.id)
         .single()
-
       setMe({ ...profile, email: session.user.email })
-
       // Fetch initial unread count
       if (session.user.id) {
         const { count } = await supabase
@@ -49,10 +45,9 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           .select('*', { count: 'exact', head: true })
           .eq('user_id', session.user.id)
           .eq('is_read', false)
-        
+       
         setUnreadCount(count || 0)
       }
-
       setLoading(false)
     }
     getProfile()
@@ -61,7 +56,6 @@ export default function AppShell({ children, title }: { children: React.ReactNod
   // Realtime notifications listener
   useEffect(() => {
     if (!me?.id) return
-
     const channel = supabase
       .channel(`notifications-${me.id}`)
       .on(
@@ -79,12 +73,11 @@ export default function AppShell({ children, title }: { children: React.ReactNod
             .select('*', { count: 'exact', head: true })
             .eq('user_id', me.id)
             .eq('is_read', false)
-          
+         
           setUnreadCount(count || 0)
         }
       )
       .subscribe()
-
     return () => {
       supabase.removeChannel(channel)
     }
@@ -125,12 +118,11 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           </div>
           <div className="brand-name">ConOps <span>Tasker</span></div>
         </div>
-
         <nav className="nav-container">
           <Link href="/dashboard" className={`nav-item ${isActive('/dashboard') ? 'active' : ''}`}>
             <LayoutDashboard size={18} /> <span>Dashboard</span>
           </Link>
-          
+         
           <Link href="/my-tasks" className={`nav-item ${isActive('/my-tasks') ? 'active' : ''}`}>
             <CheckSquare size={18} /> <span>My Task</span>
           </Link>
@@ -153,6 +145,11 @@ export default function AppShell({ children, title }: { children: React.ReactNod
               <Link href="/workload" className={`nav-item ${isActive('/workload') ? 'active' : ''}`}>
                 <BarChart3 size={18} /> <span>Workload Oversight</span>
               </Link>
+
+              {/* Create Project - Only visible to Admin & Manager, placed under Management */}
+              <Link href="/projects/create" className={`nav-item ${isActive('/projects/create') ? 'active' : ''}`}>
+                <PlusSquare size={18} /> <span>Create Project</span>
+              </Link>
             </>
           )}
 
@@ -168,7 +165,6 @@ export default function AppShell({ children, title }: { children: React.ReactNod
             </>
           )}
         </nav>
-
         <div className="sidebar-footer">
           <div className="user-pill">
             <div className="avatar">{me?.full_name?.slice(0,2).toUpperCase()}</div>
@@ -179,9 +175,9 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           </div>
           <div className="footer-actions">
             {/* Notification Button with Unread Badge */}
-            <button 
-              onClick={() => setShowNotificationModal(true)} 
-              className="icon-btn" 
+            <button
+              onClick={() => setShowNotificationModal(true)}
+              className="icon-btn"
               title="Notifications"
               style={{ position: 'relative' }}
             >
@@ -207,7 +203,6 @@ export default function AppShell({ children, title }: { children: React.ReactNod
                 </span>
               )}
             </button>
-
             <button onClick={toggleTheme} className="icon-btn" title="Toggle Theme">
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
@@ -218,17 +213,16 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           </div>
         </div>
       </aside>
-
       <main className="main-content">
         <header className="content-header"><h1>{title}</h1></header>
         <div className="page-wrapper">{children}</div>
       </main>
 
       <PasswordModal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} />
-      <NotificationModal 
-        isOpen={showNotificationModal} 
-        onClose={() => setShowNotificationModal(false)} 
-        userId={me?.id} 
+      <NotificationModal
+        isOpen={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+        userId={me?.id}
       />
 
       <style jsx>{`
@@ -238,11 +232,11 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .logo-icon { width: 34px; height: 34px; background: var(--nav-active-txt); color: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 6px; }
         .brand-name { font-size: 19px; font-weight: 900; color: var(--txt); letter-spacing: -0.5px; }
         .brand-name span { color: var(--nav-active-txt); }
-        
+       
         .nav-container { flex: 1; padding: 0 16px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
         .nav-label { font-size: 10px; color: var(--txt3); padding: 32px 12px 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
         .nav-item { display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 11px 16px; color: var(--txt2); text-decoration: none; font-size: 13.5px; font-weight: 600; border-radius: 8px; transition: 0.2s; }
-        
+       
         .nav-item:hover { background: var(--bg2); color: var(--txt); }
         .nav-item.active { background: var(--nav-active-bg); color: var(--nav-active-txt); }
         .sidebar-footer { padding: 20px; background: var(--bg); border-top: 1px solid var(--brd); }

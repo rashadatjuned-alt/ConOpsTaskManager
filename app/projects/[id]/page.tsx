@@ -5,40 +5,124 @@ import { useEffect, useState, use } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, Edit3, Trash, ArrowLeft, Link as LinkIcon, Plus, X, Save } from 'lucide-react'
+import {
+  ListTodo, ChevronRight, Edit3, ArrowLeft,
+  Link as LinkIcon, Plus, Trash2, Check, X, AlertTriangle, Save
+} from 'lucide-react'
 import Link from 'next/link'
+import { StatusDot } from '@/components/ui/StatusPill'
 import type { Resource } from '@/types'
 
+// ── Constants ─────────────────────────────────────────────────────────────────
 const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
 const AVATAR_CL = ['#0C447C', '#27500A', '#3C3489', '#633806', '#712B13', '#085041']
-
-interface ProjectDetailProps {
-  params: Promise<{ id: string }>
-}
+const PROJECT_COLORS = [
+  '#3B82F6', '#8B5CF6', '#F59E0B', '#84CC16', '#EF4444',
+  '#4D7C0F', '#B45309', '#0284C7', '#2DD4BF', '#EC4899',
+]
 
 function ini(name: string) {
   const p = (name || 'User').trim().split(' ')
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : (name || '?')[0].toUpperCase()
 }
 
-const getPillClass = (status: string) => {
-  if (status === 'In Progress') return 'pill-ip'
-  if (status === 'On-Hold') return 'pill-oh'
-  if (status === 'Completed') return 'pill-c'
-  return 'pill-ns'
+interface ProjectDetailProps {
+  params: Promise<{ id: string }>
 }
 
-const getStatusColor = (status: string) => {
-  if (status === 'In Progress') return '#378ADD'
-  if (status === 'On-Hold') return '#EF9F27'
-  if (status === 'Completed') return '#639922'
-  return '#aaaaaa'
+// ── CLEANUP HELPER ───────────────────────────────────────────────────────────
+async function unassignUserFromProject(projectId: string, projectName: string, userId: string) {
+  const [byIdRes, byNameRes] = await Promise.all([
+    supabase.from('Tasks').select('id').eq('project_id', projectId),
+    supabase.from('Tasks').select('id').eq('project_name', projectName)
+  ])
+  const allTaskIds = [
+    ...(byIdRes.data || []).map((t: any) => String(t.id)),
+    ...(byNameRes.data || []).map((t: any) => String(t.id))
+  ]
+  const taskIds = [...new Set(allTaskIds)]
+  if (taskIds.length === 0) return
+  await supabase.from('task_assignees').delete().in('task_id', taskIds).eq('user_id', userId)
+  const { data: subsData } = await supabase.from('Subtasks').select('id').in('parent_task_id', taskIds)
+  const subIds = (subsData || []).map((s: any) => String(s.id))
+  if (subIds.length > 0) {
+    await supabase.from('subtask_assignees').delete().in('subtask_id', subIds).eq('user_id', userId)
+  }
 }
 
+// ── STATUS HELPERS ────────────────────────────────────────────────────────────
+const STATUS_PILL: Record<string, string> = {
+  'Not Started': 'pill-ns',
+  'In Progress': 'pill-ip',
+  'On-Hold':     'pill-oh',
+  'Completed':   'pill-c',
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  'Not Started': '#aaaaaa',
+  'In Progress': '#378ADD',
+  'On-Hold':     '#EF9F27',
+  'Completed':   '#639922',
+}
+
+const STATUS_BG: Record<string, string> = {
+  'Not Started': '#F1EFE8',
+  'In Progress': '#E6F1FB',
+  'On-Hold':     '#FAEEDA',
+  'Completed':   '#EAF3DE',
+}
+
+const STATUS_TXT: Record<string, string> = {
+  'Not Started': '#5F5E5A',
+  'In Progress': '#185FA5',
+  'On-Hold':     '#854F0B',
+  'Completed':   '#3B6D11',
+}
+
+// ── AVATAR STACK ──────────────────────────────────────────────────────────────
+function AvatarStack({ assignees, size = 22 }: { assignees: any[]; size?: number }) {
+  const fontSize = size <= 18 ? 8 : 9
+  const border = size <= 18 ? '-4px' : '-6px'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center' }}>
+      {assignees.slice(0, 5).map((u: any, i: number) => (
+        <div
+          key={u.id}
+          title={u.full_name}
+          style={{
+            width: size, height: size, borderRadius: '50%',
+            background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6],
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize, fontWeight: 900,
+            border: '2px solid var(--bg)',
+            marginLeft: i > 0 ? border : 0,
+            zIndex: 5 - i,
+            position: 'relative',
+          }}
+        >
+          {ini(u.full_name)}
+        </div>
+      ))}
+      {assignees.length > 5 && (
+        <div style={{
+          width: size, height: size, borderRadius: '50%',
+          background: '#f1f1f1', color: '#666',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize, fontWeight: 900,
+          border: '2px solid var(--bg)',
+          marginLeft: border,
+        }}>
+          +{assignees.length - 5}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function ProjectDetail({ params }: ProjectDetailProps) {
   const router = useRouter()
-  const resolvedParams = use(params)
-  const id = resolvedParams.id
+  const { id } = use(params)
 
   const [project, setProject] = useState<any>(null)
   const [members, setMembers] = useState<any[]>([])
@@ -46,63 +130,100 @@ export default function ProjectDetail({ params }: ProjectDetailProps) {
   const [allUsers, setAllUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [myRole, setMyRole] = useState('')
-  const [deleting, setDeleting] = useState(false)
-  const [removingId, setRemovingId] = useState<string | null>(null) // <-- RESTORED
 
-  // ── Edit States ──
+  // Edit mode
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [editProject, setEditProject] = useState<any>(null)
+  const [deleteStage, setDeleteStage] = useState(0)
+  const [deleting, setDeleting] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editColor, setEditColor] = useState('')
   const [editMembers, setEditMembers] = useState<string[]>([])
   const [resources, setResources] = useState<Resource[]>([])
 
+  // Subtask expansion
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({})
+
+  // ── LOAD DATA ───────────────────────────────────────────────────────────────
   const loadProjectData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
 
-      const { data: proj, error: projErr } = await supabase.from('Projects').select('*').eq('id', id).single()
-      if (projErr || !proj) {
-        alert("Could not load project metadata.")
+      const [projRes, usersRes, pmRes] = await Promise.all([
+        supabase.from('Projects').select('*').eq('id', id).single(),
+        supabase.from('Users').select('id, full_name, email, role'),
+        supabase.from('project_members').select('*').eq('project_id', id),
+      ])
+
+      if (projRes.error || !projRes.data) {
         router.push('/all-projects')
         return
       }
 
-      let { data: fetchedTasks, error: taskErr } = await supabase.from('Tasks').select('*').eq('project_id', id)
-      if (taskErr || !fetchedTasks || fetchedTasks.length === 0) {
-        const { data: fallbackTasks } = await supabase.from('Tasks').select('*').eq('project_name', proj.name)
-        fetchedTasks = fallbackTasks || []
-      }
-
-      const [usersRes, pmRes, taRes] = await Promise.all([
-        supabase.from('Users').select('id, full_name, email, role'),
-        supabase.from('project_members').select('*').eq('project_id', id),
-        supabase.from('task_assignees').select('*')
-      ])
-
+      const proj = projRes.data
       const fetchedUsers = usersRes.data || []
       const pmRows = pmRes.data || []
-      const taRows = taRes.data || []
 
-      const currentUser = fetchedUsers.find(u => String(u.id) === String(session.user.id))
+      const [tasksByIdRes, tasksByNameRes] = await Promise.all([
+        supabase.from('Tasks').select('*').eq('project_id', id),
+        supabase.from('Tasks').select('*').eq('project_name', proj.name)
+      ])
+
+      const allFetchedTasks = [
+        ...(tasksByIdRes.data || []),
+        ...(tasksByNameRes.data || []),
+      ]
+
+      const seen = new Set()
+      const dedupedTasks = allFetchedTasks.filter(t => {
+        const key = String(t.id)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      const taskIds = dedupedTasks.map(t => String(t.id))
+      const taRows: any[] = taskIds.length > 0
+        ? (await supabase.from('task_assignees').select('*').in('task_id', taskIds)).data || []
+        : []
+
+      const subRes = taskIds.length > 0
+        ? await supabase.from('Subtasks').select('*').in('parent_task_id', taskIds)
+        : { data: [] }
+
+      const saRes = await supabase.from('subtask_assignees').select('*')
+
+      const currentUser = fetchedUsers.find((u: any) => String(u.id) === String(session.user.id))
       setMyRole(currentUser?.role || 'Team Member')
 
-      const currentRosterIds = pmRows.map(row => String(row.user_id))
-      const projectTeam = fetchedUsers.filter(u => currentRosterIds.includes(String(u.id)))
+      const rosterIds = pmRows.map((row: any) => String(row.user_id))
+      const projectTeam = fetchedUsers.filter((u: any) => rosterIds.includes(String(u.id)))
 
-      const projectTasks = (fetchedTasks || []).map(task => ({
+      const projectTasks = dedupedTasks.map((task: any) => ({
         ...task,
-        task_assignees: taRows.filter(ta => String(ta.task_id) === String(task.id))
+        task_assignees: taRows.filter((ta: any) => String(ta.task_id) === String(task.id)),
+        subtasks: (subRes.data || [])
+          .filter((s: any) => String(s.parent_task_id) === String(task.id))
+          .map((sub: any) => ({
+            ...sub,
+            subtask_assignees: (saRes.data || []).filter((sa: any) => String(sa.subtask_id) === String(sub.id))
+          }))
       }))
-
-      projectTasks.sort((a, b) => Number(b.id) - Number(a.id))
 
       setProject(proj)
       setMembers(projectTeam)
       setTasks(projectTasks)
-      setAllUsers(fetchedUsers)
+      setAllUsers(fetchedUsers.filter((u: any) => u.role !== 'Admin'))
+
+      setEditName(proj.name)
+      setEditDesc(proj.description || '')
+      setEditColor(proj.color_code || PROJECT_COLORS[0])
+      setEditMembers(rosterIds)
+      setResources(Array.isArray(proj.resources) ? proj.resources : [])
     } catch (err: any) {
-      console.error("Critical error inside load engine:", err)
+      console.error(err)
     } finally {
       setLoading(false)
     }
@@ -110,370 +231,662 @@ export default function ProjectDetail({ params }: ProjectDetailProps) {
 
   useEffect(() => { loadProjectData() }, [id])
 
-  // ── Action Handlers ──
   const startEdit = () => {
-    setEditProject({ ...project })
+    if (!project) return
+    setEditName(project.name)
+    setEditDesc(project.description || '')
+    setEditColor(project.color_code || PROJECT_COLORS[0])
     setEditMembers(members.map(m => String(m.id)))
     setResources(Array.isArray(project.resources) ? project.resources : [])
     setEditing(true)
   }
 
-  const cancelEdit = () => {
-    setEditing(false)
-    setEditProject(null)
-    setEditMembers([])
-    setResources([])
-  }
-
   const handleSave = async () => {
     setSaving(true)
     try {
-      // Update core project
       await supabase.from('Projects').update({
-        name: editProject.name,
-        description: editProject.description,
-        status: editProject.status,
-        resources: resources
+        name: editName.trim(),
+        description: editDesc.trim(),
+        color_code: editColor,
+        resources,
       }).eq('id', id)
 
-      // Sync members list
-      await supabase.from('project_members').delete().eq('project_id', id)
-      if (editMembers.length > 0) {
-        await supabase.from('project_members').insert(
-          editMembers.map(uid => ({ project_id: id, user_id: uid }))
-        )
+      if (editName.trim() !== project.name) {
+        await supabase.from('Tasks').update({ project_name: editName.trim() }).eq('project_id', id)
       }
-      
-      await loadProjectData()
+
+      const currentMemberIds = members.map((m: any) => String(m.id))
+      const removedIds = currentMemberIds.filter(uid => !editMembers.includes(uid))
+      const addedIds = editMembers.filter(uid => !currentMemberIds.includes(uid))
+
+      for (const uid of removedIds) {
+        await supabase.from('project_members').delete().eq('project_id', id).eq('user_id', uid)
+        await unassignUserFromProject(id, project.name, uid)
+      }
+
+      if (addedIds.length > 0) {
+        await supabase.from('project_members').insert(addedIds.map(uid => ({ project_id: id, user_id: uid })))
+      }
+
       setEditing(false)
-    } catch(e) {
-      console.error(e)
-      alert("Failed to save changes.")
+      setDeleteStage(0)
+      await loadProjectData()
+    } catch (err: any) {
+      alert(`Save failed: ${err.message}`)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const handleDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${project?.name}?`)) return
     setDeleting(true)
-    await supabase.from('Projects').delete().eq('id', id)
-    router.push('/all-projects')
+    try {
+      const { data: tasksById } = await supabase.from('Tasks').select('id').eq('project_id', id)
+      const { data: tasksByName } = await supabase.from('Tasks').select('id').eq('project_name', project.name)
+      const uniqueTaskIds = [...new Set([
+        ...(tasksById || []).map((t: any) => t.id),
+        ...(tasksByName || []).map((t: any) => t.id),
+      ])]
+
+      if (uniqueTaskIds.length > 0) {
+        const { data: subsData } = await supabase.from('Subtasks').select('id').in('parent_task_id', uniqueTaskIds)
+        const subIds = (subsData || []).map((s: any) => s.id)
+        if (subIds.length > 0) {
+          await supabase.from('subtask_assignees').delete().in('subtask_id', subIds)
+          await supabase.from('Subtasks').delete().in('parent_task_id', uniqueTaskIds)
+        }
+        await supabase.from('task_assignees').delete().in('task_id', uniqueTaskIds)
+        await supabase.from('Tasks').delete().in('id', uniqueTaskIds)
+      }
+
+      await supabase.from('project_members').delete().eq('project_id', id)
+      await supabase.from('Projects').delete().eq('id', id)
+      router.push('/all-projects')
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message}`)
+    } finally {
+      setDeleting(false)
+    }
   }
 
-  const handleRemoveMember = async (memberId: string) => {
-    if (!confirm("Remove this member from the project?")) return
-    setRemovingId(memberId) // <-- RESTORED logic
-    await supabase.from('project_members').delete().eq('project_id', id).eq('user_id', memberId)
-    await loadProjectData()
-    setRemovingId(null) // <-- RESTORED logic
-  }
-
-  // ── Inline Resource Handlers ──
   const addResource = () => setResources(p => [...p, { sl: p.length + 1, title: '', link: '' }])
-  const updateResource = (i: number, field: 'title' | 'link', val: string) => setResources(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
-  const removeResource = (i: number) => setResources(p => p.filter((_, idx) => idx !== i).map((r, idx) => ({ ...r, sl: idx + 1 })))
+  const updateResource = (i: number, field: 'title' | 'link', val: string) =>
+    setResources(p => p.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
+  const removeResource = (i: number) =>
+    setResources(p => p.filter((_, idx) => idx !== i).map((r, idx) => ({ ...r, sl: idx + 1 })))
 
-  const completedTasksCount = tasks.filter(t => t.status === 'Completed').length
-  const progressPercentage = tasks.length ? Math.round((completedTasksCount / tasks.length) * 100) : 0
+  const completedCount = tasks.filter(t => t.status === 'Completed').length
+  const progressPercentage = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0
   const isManagerOrAdmin = myRole === 'Admin' || myRole === 'Manager'
+  const color = project?.color_code || PROJECT_COLORS[0]
 
-  if (loading) return <AppShell title="Project View"><div style={{ padding: 40, textAlign: 'center' }}>Loading...</div></AppShell>
+  // ── Project Status ────────────────────────────────────────────────────────────
+  const getProjectStatus = () => {
+    if (tasks.length === 0) return 'Not Started'
+    const statuses = tasks.map(t => t.status)
+    if (statuses.every(s => s === 'Not Started')) return 'Not Started'
+    if (statuses.every(s => s === 'On-Hold')) return 'On-Hold'
+    if (statuses.every(s => s === 'Completed')) return 'Completed'
+    return 'In Progress'
+  }
+  const projectStatus = getProjectStatus()
+
+  // Task breakdown counts
+  const countByStatus = (s: string) => tasks.filter(t => t.status === s).length
+
+  // Auto-calculated project dates
+  const projectStartDate = tasks.length
+    ? tasks.map(t => t.start_date).filter(Boolean).sort()[0] || '—'
+    : '—'
+  const projectEndDate = tasks.length
+    ? tasks.map(t => t.end_date).filter(Boolean).sort().reverse()[0] || '—'
+    : '—'
+
+  if (loading) return (
+    <AppShell title="Project">
+      <div style={{ padding: 40, textAlign: 'center', color: 'var(--txt3)' }}>Loading project...</div>
+    </AppShell>
+  )
+
+  if (!project) return (
+    <AppShell title="Project">
+      <div className="alert alert-error">Project not found.</div>
+    </AppShell>
+  )
 
   return (
-    <AppShell title={project?.name || "Project View"}>
-      
-      <style dangerouslySetInnerHTML={{ __html: `
-        .fm-wrapper {
-          --r: 6px; 
-          --rl: 10px;
-          color: var(--txt);
-        }
-        .card { background: var(--bg); border: 1px solid var(--brd); border-radius: var(--rl); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--shd); }
-        .sec { font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; color: var(--txt3); padding-bottom: 10px; border-bottom: 1px solid var(--brd); margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
-        .sec-lbl { font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; color: var(--txt3); }
-        
-        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--r); border: 1px solid var(--brd2); background: var(--bg); color: var(--txt2); font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; text-decoration: none; }
-        .btn:hover { background: var(--bg2); }
-        .btn-primary { background: var(--txt2); color: var(--bg); border-color: var(--txt2); }
-        .btn-sm { padding: 4px 10px; font-size: 12px; }
-        .btn-delete { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 10px; background: var(--del-bg); color: var(--del-txt); border: 1px solid var(--del-brd); border-radius: var(--r); cursor: pointer; font-size: 11px; font-weight: 700; transition: .15s; }
-        .btn-delete:disabled { opacity: 0.5; cursor: not-allowed; }
-        
-        .pill { font-size: 9px; font-weight: 800; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-        .pill-ns { background: var(--pill-ns-bg); color: var(--pill-ns-txt); }
-        .pill-ip { background: var(--pill-ip-bg); color: var(--pill-ip-txt); }
-        .pill-oh { background: var(--pill-oh-bg); color: var(--pill-oh-txt); }
-        .pill-c { background: var(--pill-c-bg); color: var(--pill-c-txt); }
-        
-        /* Form Classes */
-        .fl { font-size: 10px; font-weight: 800; color: var(--txt3); text-transform: uppercase; letter-spacing: .12em; display: block; margin-bottom: 5px; }
-        .fi { width: 100%; padding: 7px 10px; border: 1px solid var(--brd2); border-radius: var(--r); background: var(--bg); color: var(--txt); font-size: 13px; font-weight: 500; outline: none; }
-        .fta { width: 100%; padding: 7px 10px; border: 1px solid var(--brd2); border-radius: var(--r); background: var(--bg); color: var(--txt); font-size: 13px; font-weight: 500; outline: none; min-height: 60px; resize: vertical; }
-        .fg { margin-bottom: 12px; }
-        
-        /* Status toggle row */
-        .status-row { display: flex; gap: 6px; flex-wrap: wrap; }
-        .sopt { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--brd2); cursor: pointer; font-size: 11px; font-weight: 700; background: transparent; color: var(--txt2); transition: .15s; }
-        .sopt.sel-ns { background: var(--pill-ns-bg); color: var(--pill-ns-txt); border-color: var(--pill-ns-txt); }
-        .sopt.sel-ip { background: var(--pill-ip-bg); color: var(--pill-ip-txt); border-color: var(--pill-ip-txt); }
-        .sopt.sel-oh { background: var(--pill-oh-bg); color: var(--pill-oh-txt); border-color: var(--pill-oh-txt); }
-        .sopt.sel-c { background: var(--pill-c-bg); color: var(--pill-c-txt); border-color: var(--pill-c-txt); }
-        
-        /* Toggle member chips */
-        .tgl { padding: 3px 11px; font-size: 12px; font-weight: 600; border-radius: 20px; border: 1px solid var(--brd2); cursor: pointer; background: transparent; color: var(--txt2); transition: .15s; white-space: nowrap; }
-        .tgl.on { background: var(--txt2); color: var(--bg); border-color: var(--txt2); }
+    <AppShell title={project.name}>
 
-        .two-col { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
-        @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
-        
-        .task-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--brd); border-radius: var(--r); margin-bottom: 8px; cursor: pointer; transition: border-color .15s; }
-        .task-row:hover { border-color: var(--brd2); }
-        .tdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-        .av { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; border: 2px solid var(--bg); flex-shrink: 0; }
-        .prog-bar { height: 6px; background: var(--bg2); border-radius: 10px; overflow: hidden; }
-        .prog-fill { height: 100%; border-radius: 10px; transition: width 0.4s ease-out; }
-        .member-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--brd); border-radius: var(--r); margin-bottom: 8px; }
-        .res-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--brd); border-radius: var(--r); margin-bottom: 8px; }
-        .block-draft { background: var(--bg3); border: 1px solid var(--brd); border-radius: var(--r); padding: 14px; margin-bottom: 10px; }
-        .block-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-        .block-lbl { font-size: 10px; font-weight: 800; color: var(--txt3); text-transform: uppercase; letter-spacing: .12em; }
-      `}} />
+      {/* ── Top bar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        <button className="btn btn-sm" onClick={() => router.back()}>
+          <ArrowLeft size={14} /> Back
+        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isManagerOrAdmin && !editing && (
+            <button className="btn btn-sm" onClick={startEdit}>
+              <Edit3 size={13} /> Edit Project
+            </button>
+          )}
+          {editing && (
+            <>
+              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                <Save size={13} /> {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button className="btn btn-sm" onClick={() => { setEditing(false); setDeleteStage(0) }}>
+                Cancel
+              </button>
+            </>
+          )}
+          {isManagerOrAdmin && (
+            deleteStage === 0
+              ? (
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setDeleteStage(1)}
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              )
+              : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={13} color="#ef4444" />
+                  <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>Sure?</span>
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    {deleting ? '...' : 'Yes, delete'}
+                  </button>
+                  <button onClick={() => setDeleteStage(0)} className="btn btn-sm">No</button>
+                </div>
+              )
+          )}
+        </div>
+      </div>
 
-      <div className="fm-wrapper">
-        
-        {/* ── TOOLBAR ── */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18, flexWrap:'wrap', gap:10 }}>
-          <button className="btn" onClick={() => router.push('/all-projects')}>
-            <ArrowLeft size={16} /> Back
-          </button>
-          
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            {!editing ? (
+      {/* ── Two-column layout ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+
+        {/* ── LEFT ── */}
+        <div>
+
+          {/* Overview card */}
+          <div className="card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: editing ? editColor : color, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Overview
+              </span>
+            </div>
+            {editing ? (
               <>
-                <span className={`pill ${getPillClass(project?.status || 'Active')}`} style={{ fontSize: 11, padding: '4px 12px' }}>
-                  {project?.status || 'Active'}
-                </span>
-                {isManagerOrAdmin && <button className="btn btn-sm" onClick={startEdit}><Edit3 size={14} /> Edit Project</button>}
-                {isManagerOrAdmin && <button className="btn-delete btn-sm" onClick={handleDelete} disabled={deleting}><Trash size={14} /> Delete</button>}
+                <div className="form-group">
+                  <label className="form-label">Project Name</label>
+                  <input className="form-input" value={editName} onChange={e => setEditName(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <textarea className="form-textarea" value={editDesc} onChange={e => setEditDesc(e.target.value)} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Accent Colour</label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                    {PROJECT_COLORS.map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setEditColor(c)}
+                        style={{
+                          width: 24, height: 24, borderRadius: '50%', background: c,
+                          border: 'none', cursor: 'pointer', flexShrink: 0,
+                          outline: editColor === c ? `3px solid ${c}` : 'none',
+                          outlineOffset: 2,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
               </>
             ) : (
-              <>
-                <button className="btn btn-sm btn-primary" onClick={handleSave} disabled={saving}><Save size={14} /> Save</button>
-                <button className="btn btn-sm" onClick={cancelEdit}>Cancel</button>
-              </>
+              <p style={{ fontSize: 13, color: 'var(--txt2)', lineHeight: 1.6, margin: 0 }}>
+                {project.description || 'No description provided.'}
+              </p>
+            )}
+          </div>
+
+          {/* ── Tasks card ── */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+
+            {/* Card header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 16px 12px',
+              borderBottom: '0.5px solid var(--brd)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <ListTodo size={15} color="var(--txt3)" />
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--txt)' }}>Tasks</span>
+                <span style={{ fontSize: 12, color: 'var(--txt3)', fontWeight: 400 }}>({tasks.length})</span>
+              </div>
+              <Link href={`/tasks/create?project_id=${id}`} className="btn btn-primary btn-sm">
+                <Plus size={12} /> Add Task
+              </Link>
+            </div>
+
+            {tasks.length === 0 ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: 13, color: 'var(--txt3)', background: 'var(--bg2)' }}>
+                No tasks yet. Create one above!
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg2)' }}>
+                    <th style={thStyle('left', 'auto')}>Task</th>
+                    <th style={thStyle('left', 88)}>Start</th>
+                    <th style={thStyle('left', 88)}>End</th>
+                    <th style={thStyle('center', 100)}>Assignees</th>
+                    <th style={thStyle('right', 100)}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map((task: any) => {
+                    const assignees = (task.task_assignees || [])
+                      .map((ta: any) => allUsers.find((u: any) => String(u.id) === String(ta.user_id)))
+                      .filter(Boolean)
+                    const isExpanded = expandedTasks[task.id] || false
+                    const hasSubs = task.subtasks && task.subtasks.length > 0
+
+                    return (
+                      <>
+                        {/* Task row */}
+                        <tr
+                          key={task.id}
+                          style={{ cursor: 'pointer', borderTop: '0.5px solid var(--brd)' }}
+                          onClick={() => router.push(`/tasks/${task.id}`)}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = '')}
+                        >
+                          <td style={{ ...tdStyle(), paddingLeft: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              {hasSubs ? (
+                                <ChevronRight
+                                  size={13}
+                                  color="var(--txt3)"
+                                  style={{
+                                    transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                    transition: 'transform 0.18s',
+                                    flexShrink: 0,
+                                  }}
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setExpandedTasks(prev => ({ ...prev, [task.id]: !prev[task.id] }))
+                                  }}
+                                />
+                              ) : (
+                                <div style={{ width: 13, flexShrink: 0 }} />
+                              )}
+                              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)' }}>
+                                {task.topic}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ ...tdStyle(), fontSize: 12, color: 'var(--txt3)' }}>
+                            {task.start_date || '—'}
+                          </td>
+                          <td style={{ ...tdStyle(), fontSize: 12, color: 'var(--txt3)' }}>
+                            {task.end_date || '—'}
+                          </td>
+                          <td style={{ ...tdStyle(), textAlign: 'center' }}>
+                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                              <AvatarStack assignees={assignees} size={22} />
+                            </div>
+                          </td>
+                          <td style={{ ...tdStyle(), textAlign: 'right', paddingRight: 16 }}>
+                            <span className={`pill ${STATUS_PILL[task.status] || 'pill-ns'}`} style={{ fontSize: 10 }}>
+                              {task.status}
+                            </span>
+                          </td>
+                        </tr>
+
+                        {/* Subtask rows */}
+                        {hasSubs && isExpanded && task.subtasks.map((sub: any) => {
+                          const subAssignees = (sub.subtask_assignees || [])
+                            .map((sa: any) => allUsers.find((u: any) => String(u.id) === String(sa.user_id)))
+                            .filter(Boolean)
+                          return (
+                            <tr
+                              key={sub.id}
+                              style={{ background: 'var(--bg2)', borderTop: '0.5px solid var(--brd)', cursor: 'pointer' }}
+                              onClick={() => router.push(`/tasks/${task.id}`)}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg2)')}
+                            >
+                              <td style={{ ...tdStyle(), paddingLeft: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                  {/* indent spacer = chevron width */}
+                                  <div style={{ width: 13, flexShrink: 0 }} />
+                                  <span style={{ color: 'var(--txt3)', fontSize: 12, flexShrink: 0 }}>↳</span>
+                                  <span style={{ fontSize: 12, color: 'var(--txt2)' }}>{sub.topic}</span>
+                                </div>
+                              </td>
+                              <td style={{ ...tdStyle(), fontSize: 11, color: 'var(--txt3)' }}>
+                                {sub.start_date || '—'}
+                              </td>
+                              <td style={{ ...tdStyle(), fontSize: 11, color: 'var(--txt3)' }}>
+                                {sub.end_date || '—'}
+                              </td>
+                              <td style={{ ...tdStyle(), textAlign: 'center' }}>
+                                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                  <AvatarStack assignees={subAssignees} size={18} />
+                                </div>
+                              </td>
+                              <td style={{ ...tdStyle(), textAlign: 'right', paddingRight: 16 }}>
+                                <span className={`pill ${STATUS_PILL[sub.status] || 'pill-ns'}`} style={{ fontSize: 9 }}>
+                                  {sub.status}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </>
+                    )
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
 
-        {/* ── TWO COLUMN LAYOUT ── */}
-        <div className="two-col">
-          
-          {/* LEFT COLUMN */}
-          <div>
-            {/* Overview */}
-            <div className="card">
-              <div className="sec"><span className="sec-lbl">Overview</span></div>
-              
-              {editing && (
-                <div className="fg">
-                  <label className="fl">Project Name *</label>
-                  <input className="fi" value={editProject?.name || ''} onChange={e => setEditProject((p: any) => ({ ...p, name: e.target.value }))} />
-                </div>
-              )}
+        {/* ── RIGHT ── */}
+        <div>
 
-              {editing && (
-                <div className="fg" style={{ marginBottom: 16 }}>
-                  <label className="fl">Status</label>
-                  <div className="status-row">
-                    {['Not Started', 'In Progress', 'On-Hold', 'Completed'].map(s => {
-                      const isSel = editProject?.status === s
-                      let selClass = ''
-                      if (isSel) {
-                        if (s === 'Not Started') selClass = 'sel-ns'
-                        if (s === 'In Progress') selClass = 'sel-ip'
-                        if (s === 'On-Hold') selClass = 'sel-oh'
-                        if (s === 'Completed') selClass = 'sel-c'
-                      }
-                      return <button key={s} className={`sopt ${selClass}`} onClick={() => setEditProject((p: any) => ({ ...p, status: s }))}>{s}</button>
-                    })}
-                  </div>
-                </div>
-              )}
+          {/* ── Progress card ── */}
+          <div className="card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Progress
+              </span>
+            </div>
 
-              <div className="fg" style={{ marginBottom: 0 }}>
-                {editing && <label className="fl">Description</label>}
-                {!editing ? (
-                  <p style={{ fontSize: 13, color: 'var(--txt2)', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' }}>
-                    {project?.description || "No description provided."}
-                  </p>
-                ) : (
-                  <textarea className="fta" value={editProject?.description || ''} onChange={e => setEditProject((p: any) => ({ ...p, description: e.target.value }))} />
-                )}
+            {/* Status badge + completion % */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 5 }}>
+                  Status
+                </div>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                  background: STATUS_BG[projectStatus] || '#F1EFE8',
+                  color: STATUS_TXT[projectStatus] || '#5F5E5A',
+                }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_COLOR[projectStatus] || '#aaa', flexShrink: 0 }} />
+                  {projectStatus}
+                </span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 3 }}>
+                  Completion
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 500, color: 'var(--txt)', lineHeight: 1 }}>
+                  {progressPercentage}%
+                </div>
               </div>
             </div>
 
-            {/* Tasks List (Hidden when editing) */}
-            {!editing && (
-              <div className="card">
-                <div className="sec">
-                  <span className="sec-lbl">Tasks ({tasks.length})</span>
-                  <Link href={`/tasks/create?project_id=${id}`} className="btn btn-primary btn-sm">
-                    <Plus size={14} /> Add Task
-                  </Link>
-                </div>
+            {/* Progress bar */}
+            <div className="prog-bar" style={{ height: 6, marginBottom: 12 }}>
+              <div className="prog-fill" style={{ width: `${progressPercentage}%`, background: color, transition: 'width 0.4s' }} />
+            </div>
 
-                {tasks.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No tasks created yet.</div>
-                ) : (
-                  tasks.map(task => {
-                    const assignees = (task.task_assignees || []).map((ta: any) => allUsers.find(u => String(u.id) === String(ta.user_id))).filter(Boolean)
-                    
-                    return (
-                      <div key={task.id} className="task-row" onClick={() => router.push(`/tasks/${task.id}`)} style={{ opacity: task.status === 'Completed' ? 0.65 : 1 }}>
-                        <div className="tdot" style={{ background: getStatusColor(task.status) }}></div>
-                        
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)' }}>{task.topic}</div>
-                          <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 2 }}>Due {task.end_date || '—'}</div>
-                        </div>
-                        
-                        <div style={{ display: 'flex', gap: 2 }}>
-                          {assignees.slice(0, 3).map((u: any, i: number) => (
-                            <div key={u.id} className="av" style={{ background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6] }} title={u.full_name}>
-                              {ini(u.full_name)}
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <span className={`pill ${getPillClass(task.status)}`}>{task.status}</span>
-                        <ChevronRight size={14} color="var(--txt3)" />
+            {/* Breakdown pills */}
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 14 }}>
+              {[
+                ['Completed', 'pill-c'],
+                ['In Progress', 'pill-ip'],
+                ['On-Hold', 'pill-oh'],
+                ['Not Started', 'pill-ns'],
+              ].map(([s, cls]) => {
+                const n = countByStatus(s)
+                if (!n) return null
+                return (
+                  <span key={s} className={`pill ${cls}`} style={{ fontSize: 10 }}>
+                    {n} {s.toLowerCase()}
+                  </span>
+                )
+              })}
+            </div>
+
+            {/* Start / End date tiles */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {[
+                { label: 'Start', value: projectStartDate },
+                { label: 'End', value: projectEndDate },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  style={{
+                    background: 'var(--bg2)',
+                    border: '0.5px solid var(--brd)',
+                    borderRadius: 8,
+                    padding: '9px 12px',
+                  }}
+                >
+                  <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 4 }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Team Members card ── */}
+          <div className="card">
+            <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Team Members{' '}
+                <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+                  ({editing ? editMembers.length : members.length})
+                </span>
+              </span>
+            </div>
+
+            {editing ? (
+              /* Edit mode: toggle list */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {allUsers.map((u: any, i: number) => {
+                  const active = editMembers.includes(String(u.id))
+                  return (
+                    <div
+                      key={u.id}
+                      onClick={() => setEditMembers(prev =>
+                        prev.includes(String(u.id))
+                          ? prev.filter(x => x !== String(u.id))
+                          : [...prev, String(u.id)]
+                      )}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 10px', borderRadius: 'var(--r)', cursor: 'pointer',
+                        background: active ? 'var(--bg2)' : 'transparent',
+                        border: active ? '0.5px solid var(--brd2)' : '0.5px solid transparent',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      <div style={{
+                        width: 30, height: 30, borderRadius: 8,
+                        background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6],
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 800, flexShrink: 0,
+                      }}>
+                        {ini(u.full_name)}
                       </div>
-                    )
-                  })
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)' }}>{u.full_name}</div>
+                        <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{u.role}</div>
+                      </div>
+                      {active
+                        ? <Check size={14} color="#3B6D11" />
+                        : <div style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--brd2)' }} />
+                      }
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              /* View mode: clean list, no remove button */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {members.map((member: any, idx: number) => {
+                  const taskCount = tasks.filter(t =>
+                    Array.isArray(t.task_assignees) &&
+                    t.task_assignees.some((ta: any) => String(ta.user_id) === String(member.id))
+                  ).length
+                  return (
+                    <div
+                      key={member.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '9px 12px',
+                        background: 'var(--bg2)',
+                        border: '0.5px solid var(--brd)',
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 8,
+                        background: AVATAR_BG[idx % 6], color: AVATAR_CL[idx % 6],
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 800, flexShrink: 0,
+                      }}>
+                        {ini(member.full_name)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {member.full_name}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                          {member.role} · {taskCount} task{taskCount !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {members.length === 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--txt3)', textAlign: 'center', padding: '8px 0' }}>
+                    No members assigned.
+                  </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div>
-            
-            {/* Progress Card (Hidden when editing) */}
-            {!editing && (
-              <div className="card">
-                <div className="sec"><span className="sec-lbl">Progress</span></div>
-                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--txt)', letterSpacing: '-.02em', marginBottom: 8 }}>
-                  {progressPercentage}%
-                </div>
-                <div className="prog-bar" style={{ marginBottom: 8 }}>
-                  <div className="prog-fill" style={{ width: `${progressPercentage}%`, background: project?.color_code || 'var(--txt2)' }}></div>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
-                  {completedTasksCount} of {tasks.length} tasks completed
-                </div>
-              </div>
-            )}
-
-            {/* Team Members */}
-            <div className="card">
-              <div className="sec"><span className="sec-lbl">Team Members ({editing ? editMembers.length : members.length})</span></div>
-              
-              {editing ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                  {allUsers.map((u: any) => {
-                    const sel = editMembers.includes(String(u.id))
-                    return (
-                      <button key={u.id} type="button" onClick={() => setEditMembers(prev => prev.includes(String(u.id)) ? prev.filter(id => id !== String(u.id)) : [...prev, String(u.id)])} className={`tgl ${sel ? 'on' : ''}`}>
-                        {sel ? '✓ ' : ''}{u.full_name}
-                      </button>
-                    )
-                  })}
-                </div>
-              ) : (
-                members.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No members added.</div>
-                ) : (
-                  members.map((member, i) => {
-                    const isRemoving = removingId === member.id
-                    return (
-                      <div className="member-row" key={member.id}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div className="av" style={{ width: 30, height: 30, fontSize: 11, background: AVATAR_BG[i % 6], color: AVATAR_CL[i % 6] }}>
-                            {ini(member.full_name)}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)' }}>{member.full_name}</div>
-                            <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', fontWeight: 700 }}>
-                              {member.role || 'Team Member'}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {isManagerOrAdmin && (
-                          <button 
-                            className="btn-delete" 
-                            style={{ padding: '3px 8px', fontSize: 10 }}
-                            onClick={() => handleRemoveMember(member.id)}
-                            disabled={isRemoving}
-                          >
-                            {isRemoving ? '...' : <X size={12} />}
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })
-                )
+          {/* ── Resources card ── */}
+          <div className="card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Resources{' '}
+                <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+                  ({resources.length})
+                </span>
+              </span>
+              {editing && (
+                <button className="btn btn-sm" onClick={addResource}>
+                  <Plus size={12} /> Add
+                </button>
               )}
             </div>
 
-            {/* Resources */}
-            <div className="card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                <div className="sec-lbl">Resources ({editing ? resources.length : (project?.resources?.length || 0)})</div>
-                {editing && <button className="btn btn-primary btn-sm" onClick={addResource}><Plus size={14} /> Add</button>}
+            {resources.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                No resources attached.
               </div>
-              
-              {editing ? (
-                resources.map((r, i) => (
-                  <div key={i} className="block-draft">
-                    <div className="block-hdr">
-                      <span className="block-lbl">Resource {i + 1}</span>
-                      <button className="btn-delete" onClick={() => removeResource(i)}><Trash size={14} /> Remove</button>
-                    </div>
-                    <div className="fg"><label className="fl">Title *</label><input className="fi" value={r.title} onChange={e => updateResource(i, 'title', e.target.value)} /></div>
-                    <div className="fg" style={{ marginBottom: 0 }}>
-                      <label className="fl">Link</label>
-                      <div style={{ position: 'relative' }}>
-                        <LinkIcon size={13} color="var(--txt3)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-                        <input className="fi" style={{ paddingLeft: 30 }} value={r.link} onChange={e => updateResource(i, 'link', e.target.value)} placeholder="https://" />
+            ) : editing ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resources.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      value={r.title}
+                      onChange={e => updateResource(i, 'title', e.target.value)}
+                      placeholder="Label..."
+                      className="form-input"
+                      style={{ flex: 1, padding: '5px 8px', fontSize: 12 }}
+                    />
+                    <input
+                      value={r.link}
+                      onChange={e => updateResource(i, 'link', e.target.value)}
+                      placeholder="https://..."
+                      className="form-input"
+                      style={{ flex: 2, padding: '5px 8px', fontSize: 12 }}
+                    />
+                    <button
+                      onClick={() => removeResource(i)}
+                      style={{ background: 'none', border: 'none', color: '#cc3333', cursor: 'pointer', padding: 4, display: 'flex' }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resources.map((r, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 10,
+                      padding: '10px 12px',
+                      background: 'var(--bg2)',
+                      border: '0.5px solid var(--brd)',
+                      borderRadius: 8,
+                    }}
+                  >
+                    <LinkIcon size={13} color="var(--txt3)" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)', marginBottom: 2 }}>
+                        {r.title || 'Link'}
                       </div>
+                      <a
+                        href={r.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: 11, color, textDecoration: 'underline', wordBreak: 'break-all' }}
+                      >
+                        {r.link}
+                      </a>
                     </div>
                   </div>
-                ))
-              ) : (
-                (!project?.resources || project.resources.length === 0) ? (
-                  <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No resources attached.</div>
-                ) : (
-                  (project.resources as Resource[]).map((res, i) => (
-                    <div className="res-row" key={i}>
-                      <LinkIcon size={14} color="var(--txt3)" style={{ marginTop: 2, flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 3 }}>
-                          {res.title || 'Reference Document'}
-                        </div>
-                        <a href={res.link} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--pill-ip-txt, #185FA5)', textDecoration: 'underline', wordBreak: 'break-all' }}>
-                          {res.link}
-                        </a>
-                      </div>
-                    </div>
-                  ))
-                )
-              )}
-            </div>
-
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
     </AppShell>
   )
+}
+
+// ── Style helpers ─────────────────────────────────────────────────────────────
+function thStyle(align: 'left' | 'center' | 'right', width: number | 'auto'): React.CSSProperties {
+  return {
+    fontSize: 10,
+    fontWeight: 500,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: 'var(--txt3)',
+    padding: '8px 8px 8px',
+    textAlign: align,
+    width: width === 'auto' ? undefined : width,
+    whiteSpace: 'nowrap',
+    borderBottom: '0.5px solid var(--brd)',
+    ...(align === 'left' && width === 'auto' ? { paddingLeft: 16 } : {}),
+  }
+}
+
+function tdStyle(): React.CSSProperties {
+  return {
+    padding: '9px 8px',
+    verticalAlign: 'middle',
+  }
 }

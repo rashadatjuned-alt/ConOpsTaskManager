@@ -5,14 +5,24 @@ import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, ArrowLeft, Save, Calendar, Link as LinkIcon } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, Save, Link as LinkIcon, X } from 'lucide-react'
 import type { Resource } from '@/types'
 
-// ── Constants ─────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 const STATUSES = ['Not Started', 'In Progress', 'On-Hold', 'Completed'] as const
 const TYPES    = ['One-time', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annually', 'Annually']
 
-// ── Types ─────────────────────────────────────────────────────────────────
+const AVATAR_BG = ['#E6F1FB', '#EAF3DE', '#EEEDFE', '#FAEEDA', '#FAECE7', '#E1F5EE']
+const AVATAR_CL = ['#0C447C', '#27500A', '#3C3489', '#633806', '#712B13', '#085041']
+
+const STATUS_SEL_CLS: Record<string, string> = {
+  'Not Started': 'sel-ns',
+  'In Progress':  'sel-ip',
+  'On-Hold':      'sel-oh',
+  'Completed':    'sel-c',
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface SubtaskDraft {
   id: string
   topic: string
@@ -23,20 +33,34 @@ interface SubtaskDraft {
   status: string
 }
 
-// ── Status selector ───────────────────────────────────────────────────────
-const STATUS_SEL: Record<string, string> = {
-  'Not Started': 'sel-ns',
-  'In Progress': 'sel-ip',
-  'On-Hold':     'sel-oh',
-  'Completed':   'sel-c',
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function ini(name: string) {
+  const p = (name || 'User').trim().split(' ')
+  return p.length >= 2
+    ? (p[0][0] + p[p.length - 1][0]).toUpperCase()
+    : (name || '?')[0].toUpperCase()
 }
 
+// ── Inline status select ──────────────────────────────────────────────────────
+function StatusSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className={`status-sel ${STATUS_SEL_CLS[value] || 'sel-ns'}`}
+    >
+      {STATUSES.map(s => <option key={s}>{s}</option>)}
+    </select>
+  )
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function CreateTask() {
   const router   = useRouter()
   const today    = new Date().toISOString().split('T')[0]
   const nextWeek = new Date(Date.now() + 7 * 864e5).toISOString().split('T')[0]
 
-  // ── Server state ─────────────────────────────────────────────────────────
+  // ── Server state ──────────────────────────────────────────────────────────
   const [allProjects, setAllProjects] = useState<any[]>([])
   const [allUsers,    setAllUsers]    = useState<any[]>([])
   const [projectTeam, setProjectTeam] = useState<any[]>([])
@@ -44,7 +68,7 @@ export default function CreateTask() {
   const [error,       setError]       = useState('')
   const [success,     setSuccess]     = useState('')
 
-  // ── Task form state ───────────────────────────────────────────────────────
+  // ── Form state ────────────────────────────────────────────────────────────
   const [projectId, setProjectId] = useState('')
   const [topic,     setTopic]     = useState('')
   const [type,      setType]      = useState('One-time')
@@ -197,38 +221,97 @@ export default function CreateTask() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const selectedProject = allProjects.find((p: any) => p.id === Number(projectId))
+  const isRecurring     = type !== 'One-time'
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <AppShell title="Create Task">
 
+      {/* Page-scoped styles — mirrors task detail exactly */}
+      <style>{`
+        .status-sel {
+          appearance: none;
+          -webkit-appearance: none;
+          border-radius: 7px;
+          border: 0.5px solid var(--brd2);
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+          font-family: inherit;
+          outline: none;
+          background-repeat: no-repeat;
+          background-position: right 8px center;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C%2Fsvg%3E");
+          padding: 5px 28px 5px 10px;
+          transition: border-color 0.15s;
+        }
+        .status-sel.sel-ns { background-color: #F1EFE8; color: #5F5E5A; border-color: #D3D1C7; }
+        .status-sel.sel-ip { background-color: #E6F1FB; color: #185FA5; border-color: #B5D4F4; }
+        .status-sel.sel-oh { background-color: #FAEEDA; color: #854F0B; border-color: #FAC775; }
+        .status-sel.sel-c  { background-color: #EAF3DE; color: #3B6D11; border-color: #C0DD97; }
+        .dark .status-sel.sel-ns { background-color: #2a2a2a; color: #aaa; border-color: #444; }
+        .dark .status-sel.sel-ip { background-color: #1a2a3a; color: #6aadff; border-color: #2a4a6a; }
+        .dark .status-sel.sel-oh { background-color: #2a2010; color: #d4a055; border-color: #4a3010; }
+        .dark .status-sel.sel-c  { background-color: #1a2a10; color: #7acc44; border-color: #2a4a10; }
+
+        .member-tile {
+          display: flex; align-items: center; gap: 10px;
+          padding: 9px 12px;
+          background: var(--bg2);
+          border: 0.5px solid var(--brd);
+          border-radius: 8px;
+          margin-bottom: 6px;
+        }
+        .member-tile:last-child { margin-bottom: 0; }
+
+        .meta-row-task {
+          display: flex; justify-content: space-between; align-items: center;
+          padding: 8px 0;
+          border-bottom: 0.5px solid var(--brd);
+          font-size: 12px;
+        }
+        .meta-row-task:last-child { border-bottom: none; }
+        .meta-lbl-task {
+          font-size: 10px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: 0.06em; color: var(--txt3);
+        }
+      `}</style>
+
       {/* ── Toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-        <button className="btn" onClick={() => router.back()}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
+        <button className="btn btn-sm" onClick={() => router.back()}>
           <ArrowLeft size={14} /> Cancel
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            <Save size={14} />
-            {saving ? 'Creating...' : `Create Task${subtasks.length > 0 ? ` + ${subtasks.length} Subtask${subtasks.length > 1 ? 's' : ''}` : ''}`}
-          </button>
-        </div>
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={saving}>
+          <Save size={13} />
+          {saving
+            ? 'Creating...'
+            : `Create Task${subtasks.length > 0 ? ` + ${subtasks.length} Subtask${subtasks.length > 1 ? 's' : ''}` : ''}`
+          }
+        </button>
       </div>
 
-      {error   && <div className="alert alert-error"   style={{ marginBottom: 16 }}>{error}</div>}
-      {success && <div className="alert alert-success" style={{ marginBottom: 16 }}>{success}</div>}
+      {error   && <div className="alert alert-error"   style={{ marginBottom: 12 }}>{error}</div>}
+      {success && <div className="alert alert-success" style={{ marginBottom: 12 }}>{success}</div>}
 
-      <div className="two-col-layout">
+      {/* ── Two-column layout — mirrors task detail ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
 
-        {/* ── LEFT column ── */}
+        {/* ════ LEFT COLUMN ════ */}
         <div>
 
-          {/* Task details */}
+          {/* Task details card — title + description only, like task detail view */}
           <div className="card">
-            <div className="form-section">Task details</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Task details
+              </span>
+            </div>
 
-            <div className="form-group">
-              <label className="form-label">Task title *</label>
+            {/* Title */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 5 }}>
+                Task title *
+              </label>
               <input
                 className="form-input"
                 placeholder="Short, clear title..."
@@ -237,63 +320,11 @@ export default function CreateTask() {
               />
             </div>
 
-            <div className="form-grid-2">
-              <div className="form-group">
-                <label className="form-label">Project *</label>
-                <select className="form-select" value={projectId} onChange={e => setProjectId(e.target.value)}>
-                  <option value="">Select project...</option>
-                  {allProjects.map((p: any) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Task type</label>
-                <select className="form-select" value={type} onChange={e => setType(e.target.value)}>
-                  {TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="form-grid-2">
-              <div className="form-group">
-                <label className="form-label">Start date</label>
-                <input
-                  className="form-input"
-                  type="date"
-                  value={startDate}
-                  onChange={e => setStartDate(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">End date</label>
-                <input
-                  className="form-input"
-                  type="date"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Status</label>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {STATUSES.map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    className={`status-opt ${status === s ? STATUS_SEL[s] : ''}`}
-                    onClick={() => setStatus(s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Description</label>
+            {/* Description */}
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 5 }}>
+                Description
+              </label>
               <textarea
                 className="form-textarea"
                 placeholder="Context, acceptance criteria, notes..."
@@ -303,279 +334,376 @@ export default function CreateTask() {
             </div>
           </div>
 
-          {/* Assign to */}
+          {/* ── Subtasks card ── */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '0.5px solid var(--brd)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--txt)' }}>Subtasks</span>
+                <span style={{ fontSize: 12, color: 'var(--txt3)' }}>({subtasks.length})</span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={addSubtask}>
+                <Plus size={12} /> Add
+              </button>
+            </div>
+
+            {subtasks.length === 0 ? (
+              <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: 'var(--txt3)', background: 'var(--bg2)' }}>
+                No subtasks yet. Click "Add" to create one.
+              </div>
+            ) : (
+              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {subtasks.map((s, i) => (
+                  <div key={s.id} style={{ background: 'var(--bg2)', border: '0.5px solid var(--brd)', borderRadius: 8, padding: '12px 14px' }}>
+
+                    {/* Header: number badge + title preview + remove */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{
+                          width: 20, height: 20, borderRadius: '50%',
+                          background: 'var(--bg)', border: '0.5px solid var(--brd2)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 10, fontWeight: 700, color: 'var(--txt3)', flexShrink: 0,
+                        }}>
+                          {i + 1}
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--txt2)' }}>
+                          {s.topic || 'New subtask'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeSub(s.id)}
+                        style={{ background: 'none', border: 'none', color: '#cc3333', cursor: 'pointer', display: 'flex', padding: 2 }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {/* Title — full width */}
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Title *</label>
+                        <input
+                          className="form-input"
+                          placeholder="Subtask title..."
+                          value={s.topic}
+                          onChange={e => updateSub(s.id, 'topic', e.target.value)}
+                        />
+                      </div>
+
+                      {/* Description — full width */}
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Description</label>
+                        <textarea
+                          className="form-textarea"
+                          style={{ minHeight: 52, fontSize: 13 }}
+                          placeholder="Optional notes..."
+                          value={s.description}
+                          onChange={e => updateSub(s.id, 'description', e.target.value)}
+                        />
+                      </div>
+
+                      {/* Dates */}
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Start date</label>
+                        <input type="date" className="form-input" value={s.start_date} onChange={e => updateSub(s.id, 'start_date', e.target.value)} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>End date</label>
+                        <input type="date" className="form-input" value={s.end_date} onChange={e => updateSub(s.id, 'end_date', e.target.value)} />
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Status</label>
+                        <StatusSelect
+                          value={s.status}
+                          onChange={v => updateSub(s.id, 'status', v)}
+                        />
+                      </div>
+
+                      {/* Assign to */}
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Assign to</label>
+                        {assignees.length === 0 ? (
+                          <span style={{ fontSize: 11, color: 'var(--txt3)' }}>Assign main task first</span>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 2 }}>
+                            {assignees.map(uid => {
+                              const u = projectTeam.find((u: any) => u.id === uid)
+                              const sel = s.assignees.includes(uid)
+                              return (
+                                <button
+                                  key={uid} type="button"
+                                  onClick={() => toggleSubAssignee(s.id, uid)}
+                                  className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
+                                  style={{ fontSize: 11, padding: '2px 10px' }}
+                                >
+                                  {sel ? '✓ ' : ''}{u ? (u.full_name || u.email).split(' ')[0] : 'Member'}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Resources card ── */}
           <div className="card">
-            <div className="form-section">Assign to</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Resources{' '}
+                <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>({resources.length})</span>
+              </span>
+              <button className="btn btn-sm" onClick={addResource}>
+                <Plus size={12} /> Add
+              </button>
+            </div>
+
+            {resources.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No resources added yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resources.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      value={r.title}
+                      onChange={e => updateResource(i, 'title', e.target.value)}
+                      placeholder="Label..."
+                      className="form-input"
+                      style={{ flex: 1, padding: '5px 8px', fontSize: 12 }}
+                    />
+                    <input
+                      value={r.link}
+                      onChange={e => updateResource(i, 'link', e.target.value)}
+                      placeholder="https://..."
+                      className="form-input"
+                      style={{ flex: 2, padding: '5px 8px', fontSize: 12 }}
+                    />
+                    <button
+                      onClick={() => removeResource(i)}
+                      style={{ background: 'none', border: 'none', color: '#cc3333', cursor: 'pointer', padding: 4, display: 'flex' }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ════ RIGHT COLUMN ════ */}
+        <div>
+
+          {/* Task info card — mirrors right column of task detail */}
+          <div className="card">
+            <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Task info
+              </span>
+            </div>
+
+            {/* Status dropdown + subtask count side by side */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 6 }}>
+                  Status
+                </div>
+                <StatusSelect value={status} onChange={setStatus} />
+              </div>
+              {subtasks.length > 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 3 }}>
+                    Subtasks
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 500, color: 'var(--txt)', lineHeight: 1, marginTop: 3 }}>
+                    {subtasks.length}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Meta rows */}
+            {/* Project */}
+            <div className="meta-row-task">
+              <span className="meta-lbl-task">Project</span>
+              <div>
+                {projectId ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3B82F6', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--txt)' }}>{selectedProject?.name}</span>
+                  </div>
+                ) : (
+                  <select
+                    className="form-select"
+                    style={{ fontSize: 12, padding: '4px 8px', width: 160 }}
+                    value={projectId}
+                    onChange={e => setProjectId(e.target.value)}
+                  >
+                    <option value="">Select project...</option>
+                    {allProjects.map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Project selector shown inline when not yet selected */}
+            {projectId && (
+              <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
+                <span className="meta-lbl-task" style={{ paddingTop: 6 }}>Change</span>
+                <select
+                  className="form-select"
+                  style={{ fontSize: 12, padding: '4px 8px', width: 160 }}
+                  value={projectId}
+                  onChange={e => setProjectId(e.target.value)}
+                >
+                  <option value="">— clear —</option>
+                  {allProjects.map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Type */}
+            <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
+              <span className="meta-lbl-task" style={{ paddingTop: 6 }}>Type</span>
+              <select
+                className="form-select"
+                style={{ fontSize: 12, padding: '4px 8px', width: 160 }}
+                value={type}
+                onChange={e => setType(e.target.value)}
+              >
+                {TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+
+            {/* Start date */}
+            <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
+              <span className="meta-lbl-task" style={{ paddingTop: 6 }}>Start</span>
+              <input
+                type="date"
+                className="form-input"
+                style={{ width: 160, fontSize: 12, padding: '4px 8px' }}
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+              />
+            </div>
+
+            {/* End date */}
+            <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
+              <span className="meta-lbl-task" style={{ paddingTop: 6 }}>End</span>
+              <input
+                type="date"
+                className="form-input"
+                style={{ width: 160, fontSize: 12, padding: '4px 8px' }}
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+              />
+            </div>
+
+            {/* Resources count */}
+            <div className="meta-row-task">
+              <span className="meta-lbl-task">Resources</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--txt)' }}>{resources.length}</span>
+            </div>
+
+            {/* Next instance preview for recurring */}
+            {isRecurring && startDate && endDate && (
+              <div className="meta-row-task" style={{ borderBottom: 'none' }}>
+                <span className="meta-lbl-task">Next instance</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: '#3B6D11' }}>
+                  {(() => {
+                    try {
+                      const d = new Date(startDate)
+                      if (type === 'Weekly')        d.setDate(d.getDate() + 7)
+                      else if (type === 'Monthly')  d.setMonth(d.getMonth() + 1)
+                      else if (type === 'Quarterly') d.setMonth(d.getMonth() + 3)
+                      else if (type === 'Semi-annually') d.setMonth(d.getMonth() + 6)
+                      else if (type === 'Annually') d.setFullYear(d.getFullYear() + 1)
+                      return d.toISOString().split('T')[0]
+                    } catch { return '—' }
+                  })()}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Assigned to card — mirrors task detail right column ── */}
+          <div className="card">
+            <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Assigned to
+              </span>
+            </div>
+
             {!projectId ? (
-              <p style={{ fontSize: 12, color: 'var(--txt3)' }}>Select a project to see available team members.</p>
+              <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                Select a project to see available team members.
+              </div>
             ) : projectTeam.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--txt3)' }}>⚠️ No team members assigned to this project yet.</p>
+              <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
+                ⚠️ No team members assigned to this project yet.
+              </div>
             ) : (
               <>
-                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
-                  Showing members from {selectedProject?.name}.
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 10 }}>
+                {/* Toggle chips to assign */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: assignees.length > 0 ? 12 : 0 }}>
                   {projectTeam.map((u: any) => {
                     const sel = assignees.includes(u.id)
                     return (
                       <button
-                        key={u.id}
-                        type="button"
-                        className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
+                        key={u.id} type="button"
                         onClick={() => toggleAssignee(u.id)}
+                        className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
                       >
                         {sel ? '✓ ' : ''}{u.full_name || u.email}
                       </button>
                     )
                   })}
                 </div>
+
+                {/* Selected members shown as tiles — same as task detail view */}
                 {assignees.length > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
-                    {assignees.length} person{assignees.length !== 1 ? 's' : ''} assigned
+                  <div>
+                    {assignees.map((uid, idx) => {
+                      const u = projectTeam.find((u: any) => u.id === uid)
+                      if (!u) return null
+                      return (
+                        <div key={uid} className="member-tile">
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 8,
+                            background: AVATAR_BG[idx % 6], color: AVATAR_CL[idx % 6],
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, fontWeight: 800, flexShrink: 0,
+                          }}>
+                            {ini(u.full_name || u.email)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {u.full_name || u.email}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                              {u.role}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </>
             )}
           </div>
 
-          {/* Subtasks */}
-          <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div className="form-section" style={{ margin: 0, padding: 0, border: 'none' }}>
-                Subtasks{' '}
-                <span style={{ fontWeight: 400, color: 'var(--txt3)' }}>({subtasks.length})</span>
-              </div>
-              <button className="btn btn-primary btn-sm" onClick={addSubtask}>
-                <Plus size={13} /> Add Subtask
-              </button>
-            </div>
-
-            {subtasks.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--txt3)', textAlign: 'center', padding: '12px 0' }}>
-                No subtasks yet.
-              </div>
-            ) : subtasks.map((s, i) => (
-              <div
-                key={s.id}
-                className={`block-draft${!s.topic ? ' empty' : ''}`}
-              >
-                <div className="block-header">
-                  <span className="block-label">Subtask {i + 1}</span>
-                  <button className="btn-delete" onClick={() => removeSub(s.id)}>
-                    <Trash2 size={12} /> Remove
-                  </button>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Title *</label>
-                  <input
-                    className="form-input"
-                    placeholder="Subtask title..."
-                    value={s.topic}
-                    onChange={e => updateSub(s.id, 'topic', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Description</label>
-                  <textarea
-                    className="form-textarea form-textarea-sm"
-                    placeholder="Optional notes for this subtask..."
-                    value={s.description}
-                    onChange={e => updateSub(s.id, 'description', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-grid-2" style={{ gap: 8, marginBottom: 10 }}>
-                  <div>
-                    <label className="form-label">Start date</label>
-                    <input
-                      className="form-input"
-                      type="date"
-                      value={s.start_date}
-                      onChange={e => updateSub(s.id, 'start_date', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">End date</label>
-                    <input
-                      className="form-input"
-                      type="date"
-                      value={s.end_date}
-                      onChange={e => updateSub(s.id, 'end_date', e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-grid-2" style={{ gap: 8 }}>
-                  <div>
-                    <label className="form-label">Assign to</label>
-                    {assignees.length === 0 ? (
-                      <p style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4 }}>Assign main task first</p>
-                    ) : (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
-                        {assignees.map(uid => {
-                          const u = projectTeam.find((u: any) => u.id === uid)
-                          const sel = s.assignees.includes(uid)
-                          return (
-                            <button
-                              key={uid}
-                              type="button"
-                              className={`toggle-btn ${sel ? 'sel-owner' : ''}`}
-                              style={{ fontSize: 11, padding: '2px 10px' }}
-                              onClick={() => toggleSubAssignee(s.id, uid)}
-                            >
-                              {sel ? '✓ ' : ''}{u ? (u.full_name || u.email).split(' ')[0] : 'Member'}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="form-label">Status</label>
-                    <select
-                      className="form-select"
-                      value={s.status}
-                      onChange={e => updateSub(s.id, 'status', e.target.value)}
-                    >
-                      {STATUSES.map(st => <option key={st}>{st}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Resources */}
-          <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div className="form-section" style={{ margin: 0, padding: 0, border: 'none' }}>
-                Resources{' '}
-                <span style={{ fontWeight: 400, color: 'var(--txt3)' }}>({resources.length})</span>
-              </div>
-              <button className="btn btn-primary btn-sm" onClick={addResource}>
-                <Plus size={13} /> Add Resource
-              </button>
-            </div>
-
-            {resources.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--txt3)', textAlign: 'center', padding: '12px 0' }}>
-                No resources added yet.
-              </div>
-            ) : resources.map((r, i) => (
-              <div key={i} className={`block-draft${!r.title ? ' empty' : ''}`}>
-                <div className="block-header">
-                  <span className="block-label">Resource {i + 1}</span>
-                  <button className="btn-delete" onClick={() => removeResource(i)}>
-                    <Trash2 size={12} /> Remove
-                  </button>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Title *</label>
-                  <input
-                    className="form-input"
-                    placeholder="Resource title..."
-                    value={r.title}
-                    onChange={e => updateResource(i, 'title', e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Link</label>
-                  <div style={{ position: 'relative' }}>
-                    <LinkIcon
-                      size={13}
-                      style={{
-                        position: 'absolute', left: 10, top: '50%',
-                        transform: 'translateY(-50%)', color: 'var(--txt3)',
-                      }}
-                    />
-                    <input
-                      className="form-input"
-                      style={{ paddingLeft: 30 }}
-                      placeholder="https://..."
-                      value={r.link}
-                      onChange={e => updateResource(i, 'link', e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
         </div>
-
-        {/* ── RIGHT column — summary ── */}
-        <div>
-          <div className="card">
-            <div className="form-section">Summary</div>
-            <div className="summary-row">
-              <span className="summary-lbl">Project</span>
-              <span className="summary-val" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                {selectedProject
-                  ? <><div style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--proj-1)', flexShrink: 0 }} />{selectedProject.name}</>
-                  : '—'
-                }
-              </span>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Type</span>
-              <span className="summary-val">{type}</span>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Start</span>
-              <span className="summary-val">{startDate || '—'}</span>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">End</span>
-              <span className="summary-val">{endDate || '—'}</span>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Status</span>
-              <span className={`pill pill-${status === 'Not Started' ? 'ns' : status === 'In Progress' ? 'ip' : status === 'On-Hold' ? 'oh' : 'c'}`}>
-                {status}
-              </span>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Assigned</span>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {assignees.length === 0
-                  ? <span className="summary-val">—</span>
-                  : assignees.slice(0, 4).map((uid, i) => {
-                      const u = projectTeam.find((u: any) => u.id === uid)
-                      return (
-                        <div
-                          key={uid}
-                          className={`avatar av-${(i % 6) + 1}`}
-                          style={{ width: 22, height: 22, fontSize: 9, fontWeight: 800 }}
-                          title={u?.full_name}
-                        >
-                          {u ? (u.full_name || u.email).slice(0, 2).toUpperCase() : '??'}
-                        </div>
-                      )
-                    })
-                }
-                {assignees.length > 4 && (
-                  <div className="avatar av-1" style={{ width: 22, height: 22, fontSize: 9, fontWeight: 800 }}>
-                    +{assignees.length - 4}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Subtasks</span>
-              <span className="summary-val">{subtasks.length}</span>
-            </div>
-            <div className="summary-row">
-              <span className="summary-lbl">Resources</span>
-              <span className="summary-val">{resources.length}</span>
-            </div>
-          </div>
-        </div>
-
       </div>
     </AppShell>
   )

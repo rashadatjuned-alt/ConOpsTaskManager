@@ -86,7 +86,6 @@ export default function MyProjects() {
       const pmRows      = pmRes.data || []
       const taRows      = taRes.data || []
 
-      // Only projects where I am a roster member
       const assignedProjectIds = pmRows
         .filter((row: any) => row.user_id === myId)
         .map((row: any) => row.project_id)
@@ -104,7 +103,6 @@ export default function MyProjects() {
           ? Math.round((doneTasks / projTasks.length) * 100)
           : 0
 
-        // NEW: Start = earliest task start date, End = latest task end date
         const startDates = projTasks
           .map((t: any) => t.start_date)
           .filter(Boolean)
@@ -126,6 +124,16 @@ export default function MyProjects() {
         const rosterIds     = pmRows.filter((r: any) => r.project_id === proj.id).map((r: any) => r.user_id)
         const activeMembers = fetchedUsers.filter((u: any) => rosterIds.includes(u.id))
 
+        const computedStatus = projTasks.length === 0
+          ? 'Not Started'
+          : projTasks.every((t: any) => t.status === 'Not Started')
+            ? 'Not Started'
+            : projTasks.every((t: any) => t.status === 'On-Hold')
+              ? 'On-Hold'
+              : projTasks.every((t: any) => t.status === 'Completed')
+                ? 'Completed'
+                : 'In Progress'
+
         return {
           ...proj,
           taskCount:     projTasks.length,
@@ -135,10 +143,10 @@ export default function MyProjects() {
           projectColor:  proj.color_code || PROJECT_COLORS[idx % PROJECT_COLORS.length],
           startDate:     earliestStart ? earliestStart.toISOString().split('T')[0] : null,
           endDate:       latestEnd     ? latestEnd.toISOString().split('T')[0]     : null,
+          status: computedStatus,
         }
       })
 
-      // Enrich tasks with assignees for the modal
       const enrichedTasks = globalTasks.map((task: any) => ({
         ...task,
         task_assignees: taRows.filter((ta: any) => ta.task_id === task.id),
@@ -158,7 +166,6 @@ export default function MyProjects() {
 
   const canEdit = myRole === 'Admin' || myRole === 'Manager'
 
-  // ── Filtered projects ─────────────────────────────────────────────────────
   const filtered = statusFilter === 'All'
     ? projects
     : projects.filter(p => (p.status || 'Not Started') === statusFilter)
@@ -202,8 +209,8 @@ export default function MyProjects() {
     <div
       className="proj-card"
       onClick={() => setSelectedProject(proj)}
+      style={{ cursor: 'pointer', height: '100%' }}
     >
-      {/* Card top */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <div
           className="proj-color-dot"
@@ -215,14 +222,12 @@ export default function MyProjects() {
         <PillStatus status={proj.status || 'Not Started'} />
       </div>
 
-      {/* Description */}
       {proj.description && (
         <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {proj.description}
         </div>
       )}
 
-      {/* START & END DATES */}
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--txt3)', marginBottom: 12 }}>
         <div>
           <span style={{ fontWeight: 600 }}>Start</span><br />
@@ -234,7 +239,6 @@ export default function MyProjects() {
         </div>
       </div>
 
-      {/* Progress */}
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--txt3)', marginBottom: 5 }}>
         <span>{proj.doneCount} / {proj.taskCount} tasks</span>
         <span style={{ fontWeight: 700, color: proj.projectColor }}>{proj.progress}%</span>
@@ -243,7 +247,6 @@ export default function MyProjects() {
         <div className="prog-fill" style={{ width: `${proj.progress}%`, background: proj.projectColor }} />
       </div>
 
-      {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <AvatarStack members={proj.activeMembers} size={22} />
         {proj.endDate && (
@@ -264,7 +267,6 @@ export default function MyProjects() {
 
     return (
       <div className="task-table" style={{ marginBottom: 10 }}>
-        {/* Project header row */}
         <div
           style={{
             display: 'grid',
@@ -298,7 +300,6 @@ export default function MyProjects() {
           <PillStatus status={proj.status || 'Not Started'} />
         </div>
 
-        {/* Task rows */}
         {open && projTasks.map((t: any) => (
           <div
             key={t.id}
@@ -314,8 +315,6 @@ export default function MyProjects() {
               transition: 'background .15s',
             }}
             onClick={() => router.push(`/tasks/${t.id}`)}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'var(--bg)')}
           >
             <span />
             <span
@@ -345,7 +344,6 @@ export default function MyProjects() {
     )
   }
 
-  // ── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
     return (
       <AppShell title="My Projects">
@@ -356,7 +354,6 @@ export default function MyProjects() {
     )
   }
 
-  // ── Empty state ───────────────────────────────────────────────────────────
   const isEmpty = filtered.length === 0
 
   return (
@@ -365,7 +362,7 @@ export default function MyProjects() {
       {/* ── KPI SECTION ── */}
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', 
         gap: 16, 
         marginBottom: 28 
       }}>
@@ -398,8 +395,6 @@ export default function MyProjects() {
 
       {/* ── Toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-
-        {/* Grid / List Toggle */}
         <div className="view-toggle" style={{ background: 'var(--bg2)', padding: 3, borderRadius: 8 }}>
           <button className={`vb ${view === 'grid' ? 'on' : 'off'}`} onClick={() => setView('grid')}>
             <LayoutGrid size={14} /> Grid
@@ -409,7 +404,6 @@ export default function MyProjects() {
           </button>
         </div>
 
-        {/* Filters */}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
           <div className="filter-pill">
             <Filter size={13} color="var(--txt3)" />
@@ -425,7 +419,6 @@ export default function MyProjects() {
         </span>
       </div>
 
-      {/* ── Empty state ── */}
       {isEmpty && (
         <div className="empty-state">
           <Folder size={32} color="var(--txt3)" />
@@ -438,9 +431,14 @@ export default function MyProjects() {
         </div>
       )}
 
-      {/* ── GRID VIEW ── */}
+      {/* ── GRID VIEW ── (Auto-fits perfectly on big & small screens) */}
       {!isEmpty && view === 'grid' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', 
+          gap: 20,
+          width: '100%' 
+        }}>
           {filtered.map(proj => <GridCard key={proj.id} proj={proj} />)}
         </div>
       )}
@@ -448,7 +446,6 @@ export default function MyProjects() {
       {/* ── LIST VIEW ── */}
       {!isEmpty && view === 'list' && (
         <>
-          {/* Column headers */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '20px 14px 1fr 120px 100px 90px 80px',
@@ -490,7 +487,6 @@ export default function MyProjects() {
             }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Modal header */}
             <div style={{
               padding: '24px 28px',
               borderBottom: '1px solid var(--brd)',
@@ -532,10 +528,7 @@ export default function MyProjects() {
               </div>
             </div>
 
-            {/* Modal body */}
             <div style={{ padding: 28, overflowY: 'auto', flex: 1 }}>
-
-              {/* Stats strip */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 24 }}>
                 {[
                   {
@@ -569,7 +562,6 @@ export default function MyProjects() {
                 ))}
               </div>
 
-              {/* Team members */}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 12 }}>
                   Team Members
@@ -594,7 +586,6 @@ export default function MyProjects() {
                 </div>
               </div>
 
-              {/* Task scope */}
               <div>
                 <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 12 }}>
                   Task Scope
@@ -643,9 +634,6 @@ export default function MyProjects() {
                       )
                     })
                   }
-                  {tasks.filter(t => t.project_id === selectedProject.id || t.project_name === selectedProject.name).length === 0 && (
-                    <div style={{ fontSize: 13, color: 'var(--txt3)', padding: '12px 0' }}>No tasks in this project yet.</div>
-                  )}
                 </div>
               </div>
             </div>
