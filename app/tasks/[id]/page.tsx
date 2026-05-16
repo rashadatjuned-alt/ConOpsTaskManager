@@ -201,15 +201,21 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         }
 
         // Copy subtasks — always reset to Not Started, shift dates to new period
+        // Use Number(newTask.id) to match the integer parent_task_id column type
         for (const sub of subtasks) {
-          const { data: newSub } = await supabase.from('Subtasks').insert({
-            parent_task_id: newTask.id,
+          const { data: newSub, error: subErr } = await supabase.from('Subtasks').insert({
+            parent_task_id: Number(newTask.id),
             topic:          sub.topic,
-            description:    sub.description,
+            description:    sub.description || '',
             start_date:     start,         // use new period start
             end_date:       end,           // use new period end
             status:         'Not Started', // always reset, never copy sub.status
           }).select().single()
+
+          if (subErr) {
+            console.error('Subtask insert error:', subErr)
+            continue
+          }
 
           if (newSub && sub.assignees?.length) {
             await supabase.from('subtask_assignees').insert(
@@ -354,8 +360,32 @@ export default function TaskDetail({ params }: TaskDetailProps) {
   const handleDelete = async () => {
     if (!confirm(`Delete "${task.topic}"? This cannot be undone.`)) return
     setDeleting(true)
-    await supabase.from('Tasks').delete().eq('id', id)
-    router.back()
+    try {
+      // 1. Delete subtask_assignees for all subtasks of this task
+      const subIds = subtasks.map(s => s.id)
+      if (subIds.length > 0) {
+        await supabase.from('subtask_assignees').delete().in('subtask_id', subIds)
+      }
+
+      // 2. Delete subtasks
+      await supabase.from('Subtasks').delete().eq('parent_task_id', Number(id))
+
+      // 3. Delete task_assignees
+      await supabase.from('task_assignees').delete().eq('task_id', id)
+
+      // 4. Now safe to delete the task
+      const { error: delErr } = await supabase.from('Tasks').delete().eq('id', id)
+      if (delErr) {
+        setError(`Delete failed: ${delErr.message}`)
+        setDeleting(false)
+        return
+      }
+
+      router.back()
+    } catch (e: any) {
+      setError(`Delete failed: ${e.message}`)
+      setDeleting(false)
+    }
   }
 
   // ── Edit helpers ───────────────────────────────────────────────────────────
