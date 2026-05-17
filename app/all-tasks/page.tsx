@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Filter, LayoutList, Columns, AlertTriangle, Calendar, ChevronRight, CheckSquare, Layers } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -93,6 +93,14 @@ export default function AllTasks() {
   const [projFilter,   setProjFilter]   = useState('All')
   const [assigneeFilter, setAssigneeFilter] = useState('All')
   const [expanded,     setExpanded]     = useState<Record<string, boolean>>({})
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+  const a = searchParams.get('assignee')
+  const p = searchParams.get('project')
+  if (a) setAssigneeFilter(a)
+  if (p) setProjFilter(p)
+      }, [searchParams])
 
   const loadData = useCallback(async () => {
     const [tRes, sRes, taRes, saRes, uRes, pRes] = await Promise.all([
