@@ -1,7 +1,7 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -76,12 +76,12 @@ function isOverdue(dateStr?: string, status?: string) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function AllTasks() {
+function AllTasksInner() {
   const router = useRouter()
 
   const [tasks,            setTasks]            = useState<Task[]>([])
   const [subtasks,         setSubtasks]         = useState<Subtask[]>([])
-  const [taskAssignees,    setTaskAssignees]     = useState<any[]>([])
+  const [taskAssignees,    setTaskAssignees]    = useState<any[]>([])
   const [subtaskAssignees, setSubtaskAssignees]  = useState<any[]>([])
   const [allUsers,         setAllUsers]         = useState<any[]>([])
   const [projColorMap,     setProjColorMap]     = useState<Record<string, string>>({})
@@ -518,5 +518,13 @@ export default function AllTasks() {
         </div>
       )}
     </AppShell>
+  )
+}
+
+export default function AllTasks() {
+  return (
+    <Suspense fallback={null}>
+      <AllTasksInner />
+    </Suspense>
   )
 }
