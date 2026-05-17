@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, ArrowLeft, Save, Link as LinkIcon, X } from 'lucide-react'
+import { notifyTaskAssigned, notifySubtaskAssigned, notifyTaskCreated } from '@/lib/notifications'
 import type { Resource } from '@/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -169,50 +170,81 @@ export default function CreateTask() {
     setSubtasks(prev => prev.map(s => s.id === id ? { ...s, [field]: val } : s))
   const removeSub = (id: string) => setSubtasks(prev => prev.filter(s => s.id !== id))
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  // ── Submit (Claude's updated version with notifications) ─────────────────
   const handleSubmit = async () => {
     setError(''); setSuccess(''); setSaving(true)
-    if (!projectId)    { setError('Please select a project.'); setSaving(false); return }
+    if (!projectId) { setError('Please select a project.'); setSaving(false); return }
     if (!topic.trim()) { setError('Task title is required.'); setSaving(false); return }
     if (endDate < startDate) { setError('End date cannot be before start date.'); setSaving(false); return }
-
     const selectedProject = allProjects.find((p: any) => p.id === Number(projectId))
-
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const triggeredBy = session?.user.id
       const { data: taskData, error: taskErr } = await supabase.from('Tasks').insert({
-        project_id:   Number(projectId),
+        project_id: Number(projectId),
         project_name: selectedProject?.name || '',
-        topic:        topic.trim(),
-        description:  desc.trim(),
+        topic: topic.trim(),
+        description: desc.trim(),
         type, start_date: startDate, end_date: endDate, status,
         tags: [], resources,
       }).select().single()
-
       if (taskErr) throw taskErr
-
+      // Insert task assignees
       if (assignees.length > 0) {
         await supabase.from('task_assignees').insert(
           assignees.map(uid => ({ task_id: taskData.id, user_id: uid }))
         )
       }
-
+      // Insert subtasks + subtask assignees
+      const createdSubs: { subId: string; assignees: string[]; topic: string }[] = []
       for (const s of subtasks) {
         const { data: subData, error: subErr } = await supabase.from('Subtasks').insert({
           parent_task_id: taskData.id,
-          topic:          s.topic.trim(),
-          description:    s.description.trim(),
-          start_date:     s.start_date,
-          end_date:       s.end_date,
-          status:         s.status,
+          topic: s.topic.trim(),
+          description: s.description.trim(),
+          start_date: s.start_date,
+          end_date: s.end_date,
+          status: s.status,
         }).select().single()
-
         if (!subErr && s.assignees.length > 0) {
           await supabase.from('subtask_assignees').insert(
             s.assignees.map(uid => ({ subtask_id: subData.id, user_id: uid }))
           )
+          createdSubs.push({ subId: subData.id, assignees: s.assignees, topic: s.topic.trim() })
         }
       }
-
+      // ── Notifications ──────────────────────────────────────────────────────
+      // 1. Notify managers a new task was created
+      await notifyTaskCreated(
+        String(taskData.id),
+        topic.trim(),
+        selectedProject?.name || '',
+        triggeredBy,
+        String(projectId),
+      )
+      // 2. Notify task assignees
+      if (assignees.length > 0) {
+        await notifyTaskAssigned(
+          String(taskData.id),
+          topic.trim(),
+          selectedProject?.name || '',
+          assignees,
+          triggeredBy,
+          String(projectId),
+        )
+      }
+      // 3. Notify subtask assignees
+      for (const sub of createdSubs) {
+        await notifySubtaskAssigned(
+          String(taskData.id),
+          sub.subId,
+          sub.topic,
+          topic.trim(),
+          sub.assignees,
+          triggeredBy,
+          String(projectId),
+        )
+      }
       setSuccess('✅ Task created successfully!')
       setTimeout(() => router.push('/my-tasks'), 1000)
     } catch (e: any) { setError(e.message) }
@@ -296,18 +328,15 @@ export default function CreateTask() {
       {/* ── Two-column layout — mirrors task detail ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
 
-        {/* ════ LEFT COLUMN ════ */}
+        {/* LEFT COLUMN */}
         <div>
-
-          {/* Task details card — title + description only, like task detail view */}
+          {/* Task details card */}
           <div className="card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
                 Task details
               </span>
             </div>
-
-            {/* Title */}
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 5 }}>
                 Task title *
@@ -319,8 +348,6 @@ export default function CreateTask() {
                 onChange={e => setTopic(e.target.value)}
               />
             </div>
-
-            {/* Description */}
             <div>
               <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 5 }}>
                 Description
@@ -334,7 +361,7 @@ export default function CreateTask() {
             </div>
           </div>
 
-          {/* ── Subtasks card ── */}
+          {/* Subtasks card */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '0.5px solid var(--brd)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -354,8 +381,6 @@ export default function CreateTask() {
               <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {subtasks.map((s, i) => (
                   <div key={s.id} style={{ background: 'var(--bg2)', border: '0.5px solid var(--brd)', borderRadius: 8, padding: '12px 14px' }}>
-
-                    {/* Header: number badge + title preview + remove */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{
@@ -377,9 +402,7 @@ export default function CreateTask() {
                         <Trash2 size={13} />
                       </button>
                     </div>
-
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {/* Title — full width */}
                       <div style={{ gridColumn: '1 / -1' }}>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Title *</label>
                         <input
@@ -389,8 +412,6 @@ export default function CreateTask() {
                           onChange={e => updateSub(s.id, 'topic', e.target.value)}
                         />
                       </div>
-
-                      {/* Description — full width */}
                       <div style={{ gridColumn: '1 / -1' }}>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Description</label>
                         <textarea
@@ -401,8 +422,6 @@ export default function CreateTask() {
                           onChange={e => updateSub(s.id, 'description', e.target.value)}
                         />
                       </div>
-
-                      {/* Dates */}
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Start date</label>
                         <input type="date" className="form-input" value={s.start_date} onChange={e => updateSub(s.id, 'start_date', e.target.value)} />
@@ -411,8 +430,6 @@ export default function CreateTask() {
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>End date</label>
                         <input type="date" className="form-input" value={s.end_date} onChange={e => updateSub(s.id, 'end_date', e.target.value)} />
                       </div>
-
-                      {/* Status */}
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Status</label>
                         <StatusSelect
@@ -420,8 +437,6 @@ export default function CreateTask() {
                           onChange={v => updateSub(s.id, 'status', v)}
                         />
                       </div>
-
-                      {/* Assign to */}
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Assign to</label>
                         {assignees.length === 0 ? (
@@ -452,7 +467,7 @@ export default function CreateTask() {
             )}
           </div>
 
-          {/* ── Resources card ── */}
+          {/* Resources card */}
           <div className="card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
@@ -463,7 +478,6 @@ export default function CreateTask() {
                 <Plus size={12} /> Add
               </button>
             </div>
-
             {resources.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No resources added yet.</div>
             ) : (
@@ -497,18 +511,15 @@ export default function CreateTask() {
           </div>
         </div>
 
-        {/* ════ RIGHT COLUMN ════ */}
+        {/* RIGHT COLUMN */}
         <div>
-
-          {/* Task info card — mirrors right column of task detail */}
+          {/* Task info card */}
           <div className="card">
             <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
                 Task info
               </span>
             </div>
-
-            {/* Status dropdown + subtask count side by side */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 6 }}>
@@ -528,8 +539,7 @@ export default function CreateTask() {
               )}
             </div>
 
-            {/* Meta rows */}
-            {/* Project */}
+            {/* Meta rows (rest of the form remains exactly as before) */}
             <div className="meta-row-task">
               <span className="meta-lbl-task">Project</span>
               <div>
@@ -554,7 +564,6 @@ export default function CreateTask() {
               </div>
             </div>
 
-            {/* Project selector shown inline when not yet selected */}
             {projectId && (
               <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
                 <span className="meta-lbl-task" style={{ paddingTop: 6 }}>Change</span>
@@ -572,7 +581,6 @@ export default function CreateTask() {
               </div>
             )}
 
-            {/* Type */}
             <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
               <span className="meta-lbl-task" style={{ paddingTop: 6 }}>Type</span>
               <select
@@ -585,7 +593,6 @@ export default function CreateTask() {
               </select>
             </div>
 
-            {/* Start date */}
             <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
               <span className="meta-lbl-task" style={{ paddingTop: 6 }}>Start</span>
               <input
@@ -597,7 +604,6 @@ export default function CreateTask() {
               />
             </div>
 
-            {/* End date */}
             <div className="meta-row-task" style={{ alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }}>
               <span className="meta-lbl-task" style={{ paddingTop: 6 }}>End</span>
               <input
@@ -609,13 +615,11 @@ export default function CreateTask() {
               />
             </div>
 
-            {/* Resources count */}
             <div className="meta-row-task">
               <span className="meta-lbl-task">Resources</span>
               <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--txt)' }}>{resources.length}</span>
             </div>
 
-            {/* Next instance preview for recurring */}
             {isRecurring && startDate && endDate && (
               <div className="meta-row-task" style={{ borderBottom: 'none' }}>
                 <span className="meta-lbl-task">Next instance</span>
@@ -636,14 +640,13 @@ export default function CreateTask() {
             )}
           </div>
 
-          {/* ── Assigned to card — mirrors task detail right column ── */}
+          {/* Assigned to card */}
           <div className="card">
             <div style={{ paddingBottom: 10, borderBottom: '0.5px solid var(--brd)', marginBottom: 14 }}>
               <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
                 Assigned to
               </span>
             </div>
-
             {!projectId ? (
               <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>
                 Select a project to see available team members.
@@ -654,7 +657,6 @@ export default function CreateTask() {
               </div>
             ) : (
               <>
-                {/* Toggle chips to assign */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: assignees.length > 0 ? 12 : 0 }}>
                   {projectTeam.map((u: any) => {
                     const sel = assignees.includes(u.id)
@@ -669,8 +671,6 @@ export default function CreateTask() {
                     )
                   })}
                 </div>
-
-                {/* Selected members shown as tiles — same as task detail view */}
                 {assignees.length > 0 && (
                   <div>
                     {assignees.map((uid, idx) => {
@@ -702,7 +702,6 @@ export default function CreateTask() {
               </>
             )}
           </div>
-
         </div>
       </div>
     </AppShell>

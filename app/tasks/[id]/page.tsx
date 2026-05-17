@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Save, Trash2, Copy, Link as LinkIcon, X, ChevronRight } from 'lucide-react'
+import { notifyTaskAssigned, notifyTaskUnassigned, notifySubtaskAssigned, notifyTaskStatusChanged, notifyTaskCompleted } from '@/lib/notifications'
 import type { Resource } from '@/types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -187,29 +188,26 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         type:         task.type,
         start_date:   start,
         end_date:     end,
-        status:       'Not Started',  // always reset
+        status:       'Not Started',
         resources:    task.resources || [],
         tags:         task.tags || [],
       }).select().single()
 
       if (newTask) {
-        // Copy task assignees
         if (task.assignees?.length) {
           await supabase.from('task_assignees').insert(
             task.assignees.map((uid: string) => ({ task_id: newTask.id, user_id: uid }))
           )
         }
 
-        // Copy subtasks — always reset to Not Started, shift dates to new period
-        // Use Number(newTask.id) to match the integer parent_task_id column type
         for (const sub of subtasks) {
           const { data: newSub, error: subErr } = await supabase.from('Subtasks').insert({
             parent_task_id: Number(newTask.id),
             topic:          sub.topic,
             description:    sub.description || '',
-            start_date:     start,         // use new period start
-            end_date:       end,           // use new period end
-            status:         'Not Started', // always reset, never copy sub.status
+            start_date:     start,
+            end_date:       end,
+            status:         'Not Started',
           }).select().single()
 
           if (subErr) {
@@ -251,6 +249,7 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     setError('')
   }
 
+  // ── NEW handleSave from Claude (with notifications) ───────────────────────
   const handleSave = async () => {
     setError(''); setSaving(true)
     if (!editTask.topic?.trim()) { setError('Task title is required.'); setSaving(false); return }
@@ -267,6 +266,9 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     }
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const triggeredBy = session?.user.id
+
       await supabase.from('Tasks').update({
         topic:       editTask.topic.trim(),
         description: editTask.description?.trim() || '',
@@ -277,12 +279,25 @@ export default function TaskDetail({ params }: TaskDetailProps) {
         resources,
       }).eq('id', id)
 
+      // ── Detect assignment changes ──────────────────────────────────────────
+      const prevAssignees: string[] = task.assignees || []
+      const nextAssignees: string[] = editTask.assignees || []
+      const added   = nextAssignees.filter(uid => !prevAssignees.includes(uid))
+      const removed = prevAssignees.filter(uid => !nextAssignees.includes(uid))
+
+      // ── Detect status change ───────────────────────────────────────────────
+      const statusChanged = task.status !== editTask.status
+
+      // Persist assignees
       await supabase.from('task_assignees').delete().eq('task_id', id)
-      if (editTask.assignees?.length) {
+      if (nextAssignees.length) {
         await supabase.from('task_assignees').insert(
-          editTask.assignees.map((uid: string) => ({ task_id: id, user_id: uid }))
+          nextAssignees.map((uid: string) => ({ task_id: id, user_id: uid }))
         )
       }
+
+      // Persist subtasks
+      const newlyAssignedSubs: { subId: string; assignees: string[]; topic: string }[] = []
 
       for (const s of editSubtasks) {
         const payload = {
@@ -297,7 +312,16 @@ export default function TaskDetail({ params }: TaskDetailProps) {
           const { data: newSub } = await supabase.from('Subtasks')
             .insert({ ...payload, parent_task_id: Number(id) }).select().single()
           targetId = newSub.id
+          if (s.assignees?.length) {
+            newlyAssignedSubs.push({ subId: String(newSub.id), assignees: s.assignees, topic: s.topic.trim() })
+          }
         } else {
+          // Detect newly added subtask assignees
+          const prevSubAssignees = (subtasks.find(x => x.id === s.id)?.assignees || [])
+          const addedSubAssignees = (s.assignees || []).filter((uid: string) => !prevSubAssignees.includes(uid))
+          if (addedSubAssignees.length) {
+            newlyAssignedSubs.push({ subId: String(s.id), assignees: addedSubAssignees, topic: s.topic.trim() })
+          }
           await supabase.from('Subtasks').update(payload).eq('id', s.id)
           await supabase.from('subtask_assignees').delete().eq('subtask_id', s.id)
         }
@@ -306,6 +330,65 @@ export default function TaskDetail({ params }: TaskDetailProps) {
             s.assignees.map((uid: string) => ({ subtask_id: targetId, user_id: uid }))
           )
         }
+      }
+
+      // ── Send notifications ─────────────────────────────────────────────────
+
+      // New task assignees
+      if (added.length) {
+        await notifyTaskAssigned(
+          String(id),
+          editTask.topic.trim(),
+          task.project_name || '',
+          added,
+          triggeredBy,
+          String(task.project_id),
+        )
+      }
+
+      // Removed task assignees
+      if (removed.length) {
+        await notifyTaskUnassigned(
+          String(id),
+          editTask.topic.trim(),
+          removed,
+          triggeredBy,
+        )
+      }
+
+      // Status changed
+      if (statusChanged) {
+        await notifyTaskStatusChanged(
+          String(id),
+          editTask.topic.trim(),
+          editTask.status,
+          nextAssignees,
+          task.project_name || '',
+          triggeredBy,
+          String(task.project_id),
+        )
+        if (editTask.status === 'Completed') {
+          await notifyTaskCompleted(
+            String(id),
+            editTask.topic.trim(),
+            task.project_name || '',
+            triggeredBy,
+            String(task.project_id),
+          )
+        }
+      }
+
+      // Newly assigned subtask members
+      for (const sub of newlyAssignedSubs) {
+        await notifySubtaskAssigned(
+          String(id),
+          sub.subId,
+          sub.topic,
+          editTask.topic.trim(),
+          sub.assignees,
+          triggeredBy,
+          String(task.project_id),
+        )
       }
 
       await loadTask()
@@ -327,7 +410,7 @@ export default function TaskDetail({ params }: TaskDetailProps) {
       type:         task.type,
       start_date:   task.start_date,
       end_date:     task.end_date,
-      status:       'Not Started', // always reset
+      status:       'Not Started',
       resources:    task.resources || [],
     }).select().single()
 
@@ -344,7 +427,7 @@ export default function TaskDetail({ params }: TaskDetailProps) {
           description:    sub.description,
           start_date:     sub.start_date,
           end_date:       sub.end_date,
-          status:         'Not Started', // always reset
+          status:         'Not Started',
         }).select().single()
         if (newSub && sub.assignees?.length) {
           await supabase.from('subtask_assignees').insert(
@@ -361,26 +444,18 @@ export default function TaskDetail({ params }: TaskDetailProps) {
     if (!confirm(`Delete "${task.topic}"? This cannot be undone.`)) return
     setDeleting(true)
     try {
-      // 1. Delete subtask_assignees for all subtasks of this task
       const subIds = subtasks.map(s => s.id)
       if (subIds.length > 0) {
         await supabase.from('subtask_assignees').delete().in('subtask_id', subIds)
       }
-
-      // 2. Delete subtasks
       await supabase.from('Subtasks').delete().eq('parent_task_id', Number(id))
-
-      // 3. Delete task_assignees
       await supabase.from('task_assignees').delete().eq('task_id', id)
-
-      // 4. Now safe to delete the task
       const { error: delErr } = await supabase.from('Tasks').delete().eq('id', id)
       if (delErr) {
         setError(`Delete failed: ${delErr.message}`)
         setDeleting(false)
         return
       }
-
       router.back()
     } catch (e: any) {
       setError(`Delete failed: ${e.message}`)
@@ -629,7 +704,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
               <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {editSubtasks.map((s, i) => (
                   <div key={s.id} style={{ background: 'var(--bg2)', border: '0.5px solid var(--brd)', borderRadius: 8, padding: '12px 14px' }}>
-                    {/* Header: number badge + remove */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{
@@ -653,13 +727,10 @@ export default function TaskDetail({ params }: TaskDetailProps) {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {/* Title — full width */}
                       <div style={{ gridColumn: '1 / -1' }}>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Title *</label>
                         <input className="form-input" value={s.topic} onChange={e => updateSub(String(s.id), 'topic', e.target.value)} placeholder="Subtask title" />
                       </div>
-
-                      {/* Description — full width */}
                       <div style={{ gridColumn: '1 / -1' }}>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Description</label>
                         <textarea
@@ -670,8 +741,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
                           placeholder="Optional details..."
                         />
                       </div>
-
-                      {/* Dates */}
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Start date</label>
                         <input type="date" className="form-input" value={s.start_date || ''} onChange={e => updateSub(String(s.id), 'start_date', e.target.value)} />
@@ -680,14 +749,10 @@ export default function TaskDetail({ params }: TaskDetailProps) {
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>End date</label>
                         <input type="date" className="form-input" value={s.end_date || ''} onChange={e => updateSub(String(s.id), 'end_date', e.target.value)} />
                       </div>
-
-                      {/* Status */}
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Status</label>
                         <StatusSelect value={s.status} onChange={v => updateSub(String(s.id), 'status', v)} />
                       </div>
-
-                      {/* Assign to */}
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', display: 'block', marginBottom: 4 }}>Assign to</label>
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
@@ -745,7 +810,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
                         <tr style={{ borderTop: '0.5px solid var(--brd)', cursor: 'default' }}>
                           <td className="td-task-page" style={{ paddingLeft: 16 }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                              {/* Number badge */}
                               <div style={{
                                 width: 18, height: 18, borderRadius: '50%',
                                 background: 'var(--bg2)', border: '0.5px solid var(--brd2)',
@@ -784,7 +848,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
                             />
                           </td>
                         </tr>
-                        {/* Description sub-row */}
                         {s.description && (
                           <tr key={`${s.id}-desc`} style={{ background: 'var(--bg2)' }}>
                             <td colSpan={5} style={{ padding: '4px 16px 8px 42px', fontSize: 12, color: 'var(--txt3)', lineHeight: 1.5, borderBottom: '0.5px solid var(--brd)' }}>
@@ -876,7 +939,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
               </span>
             </div>
 
-            {/* Status select + subtask progress */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--txt3)', marginBottom: 6 }}>
@@ -904,14 +966,12 @@ export default function TaskDetail({ params }: TaskDetailProps) {
               )}
             </div>
 
-            {/* Subtask progress bar */}
             {subtasks.length > 0 && (
               <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden', marginBottom: 16 }}>
                 <div style={{ width: `${Math.round(doneSubs / subtasks.length * 100)}%`, height: '100%', background: '#3B6D11', borderRadius: 3, transition: 'width 0.4s' }} />
               </div>
             )}
 
-            {/* Meta rows */}
             <div className="meta-row-task">
               <span className="meta-lbl-task">Project</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -984,7 +1044,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
             </div>
 
             {editing ? (
-              /* Edit mode: toggle chips */
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {projectTeam.length === 0 ? (
                   <span style={{ fontSize: 12, color: 'var(--txt3)' }}>No project members found.</span>
@@ -1004,7 +1063,6 @@ export default function TaskDetail({ params }: TaskDetailProps) {
             ) : taskAssignees.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--txt3)', fontStyle: 'italic' }}>No members assigned.</div>
             ) : (
-              /* View mode: member tiles */
               taskAssignees.map((uid, idx) => {
                 const u = resolveUser(uid)
                 if (!u) return null
