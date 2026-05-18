@@ -17,7 +17,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [unreadCount, setUnreadCount] = useState(0)
- 
+
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [showNotificationModal, setShowNotificationModal] = useState(false)
 
@@ -26,30 +26,40 @@ export default function AppShell({ children, title }: { children: React.ReactNod
     const savedTheme = (localStorage.getItem('app-theme') as 'dark' | 'light') || 'dark'
     setTheme(savedTheme)
     document.documentElement.setAttribute('data-theme', savedTheme)
+
     const getProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        router.push('/auth');
+        router.push('/auth')
         return
       }
+
       const { data: profile } = await supabase
         .from('Users')
         .select('*')
         .eq('id', session.user.id)
         .single()
-      setMe({ ...profile, email: session.user.email })
-      // Fetch initial unread count
-      if (session.user.id) {
-        const { count } = await supabase
-          .from('Notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', session.user.id)
-          .eq('is_read', false)
-       
-        setUnreadCount(count || 0)
+
+      // ── FIX: user deleted from DB but still has a valid Auth session ──
+      if (!profile) {
+        await supabase.auth.signOut()
+        router.push('/auth')
+        return
       }
+
+      setMe({ ...profile, email: session.user.email })
+
+      // Fetch initial unread count
+      const { count } = await supabase
+        .from('Notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', session.user.id)
+        .eq('is_read', false)
+
+      setUnreadCount(count || 0)
       setLoading(false)
     }
+
     getProfile()
   }, [router])
 
@@ -66,14 +76,13 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           table: 'Notifications',
           filter: `user_id=eq.${me.id}`,
         },
-        async (payload) => {
-          // Refresh unread count on any change
+        async () => {
           const { count } = await supabase
             .from('Notifications')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', me.id)
             .eq('is_read', false)
-         
+
           setUnreadCount(count || 0)
         }
       )
@@ -118,11 +127,11 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           </div>
           <div className="brand-name">ConOps <span>Tasker</span></div>
         </div>
+
         <nav className="nav-container">
           <Link href="/dashboard" className={`nav-item ${isActive('/dashboard') ? 'active' : ''}`}>
             <LayoutDashboard size={18} /> <span>Dashboard</span>
           </Link>
-         
           <Link href="/my-tasks" className={`nav-item ${isActive('/my-tasks') ? 'active' : ''}`}>
             <CheckSquare size={18} /> <span>My Task</span>
           </Link>
@@ -145,8 +154,6 @@ export default function AppShell({ children, title }: { children: React.ReactNod
               <Link href="/workload" className={`nav-item ${isActive('/workload') ? 'active' : ''}`}>
                 <BarChart3 size={18} /> <span>Workload Oversight</span>
               </Link>
-
-              {/* Create Project - Only visible to Admin & Manager, placed under Management */}
               <Link href="/projects/create" className={`nav-item ${isActive('/projects/create') ? 'active' : ''}`}>
                 <PlusSquare size={18} /> <span>Create Project</span>
               </Link>
@@ -165,6 +172,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
             </>
           )}
         </nav>
+
         <div className="sidebar-footer">
           <div className="user-pill">
             <div className="avatar">{me?.full_name?.slice(0,2).toUpperCase()}</div>
@@ -174,7 +182,6 @@ export default function AppShell({ children, title }: { children: React.ReactNod
             </div>
           </div>
           <div className="footer-actions">
-            {/* Notification Button with Unread Badge */}
             <button
               onClick={() => setShowNotificationModal(true)}
               className="icon-btn"
@@ -213,6 +220,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
           </div>
         </div>
       </aside>
+
       <main className="main-content">
         <header className="content-header"><h1>{title}</h1></header>
         <div className="page-wrapper">{children}</div>
@@ -232,11 +240,9 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .logo-icon { width: 34px; height: 34px; background: var(--nav-active-txt); color: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 6px; }
         .brand-name { font-size: 19px; font-weight: 900; color: var(--txt); letter-spacing: -0.5px; }
         .brand-name span { color: var(--nav-active-txt); }
-       
         .nav-container { flex: 1; padding: 0 16px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
         .nav-label { font-size: 10px; color: var(--txt3); padding: 32px 12px 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
         .nav-item { display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 11px 16px; color: var(--txt2); text-decoration: none; font-size: 13.5px; font-weight: 600; border-radius: 8px; transition: 0.2s; }
-       
         .nav-item:hover { background: var(--bg2); color: var(--txt); }
         .nav-item.active { background: var(--nav-active-bg); color: var(--nav-active-txt); }
         .sidebar-footer { padding: 20px; background: var(--bg); border-top: 1px solid var(--brd); }
@@ -246,7 +252,7 @@ export default function AppShell({ children, title }: { children: React.ReactNod
         .name { font-size: 13px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .role { font-size: 9px; color: var(--txt3); font-weight: 800; text-transform: uppercase; }
         .footer-actions { display: flex; gap: 8px; }
-        .icon-btn { flex: 1; background: var(--bg2); border: 1px solid var(--brd2); color: var(--txt2); padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justifyContent: 'center'; position: relative; }
+        .icon-btn { flex: 1; background: var(--bg2); border: 1px solid var(--brd2); color: var(--txt2); padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; position: relative; }
         .icon-btn:hover { color: var(--txt); border-color: var(--txt3); }
         .logout { font-size: 11px; font-weight: 700; text-transform: uppercase; }
         .main-content { margin-left: 260px; flex: 1; display: flex; flex-direction: column; }
