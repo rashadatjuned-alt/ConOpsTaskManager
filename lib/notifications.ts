@@ -134,7 +134,8 @@ export async function sendNotification(payload: NotifyPayload) {
         APP_URL
 
       // Fire-and-forget — email failure must never break the app
-      fetch(`/api/email`, {
+      // FIX: use absolute URL (APP_URL) so this works on the server after deployment
+      fetch(`${APP_URL}/api/email`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
